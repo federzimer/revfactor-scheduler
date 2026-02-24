@@ -42,8 +42,10 @@ export async function GET(req: NextRequest) {
   for (const user of adminUsers) {
     if (user.availability.length === 0) continue;
 
-    const avail = user.availability[0];
-    const timeSlots = generateTimeSlots(avail.startTime, avail.endTime, duration);
+    // Combine slots from all time ranges for this day
+    const timeSlots = user.availability.flatMap((avail) =>
+      generateTimeSlots(avail.startTime, avail.endTime, duration)
+    );
 
     // Get Google Calendar busy times
     let busyTimes: { start: string; end: string }[] = [];

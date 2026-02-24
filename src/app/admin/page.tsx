@@ -5,22 +5,22 @@ import { useEffect, useState } from 'react';
 import { redirect } from 'next/navigation';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = Math.floor(i / 2);
   const m = i % 2 === 0 ? '00' : '30';
   return `${String(h).padStart(2, '0')}:${m}`;
 });
 
-interface AvailabilityEntry {
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
+interface TimeRange {
+  start: string;
+  end: string;
 }
+
+type DayAvailability = Record<number, TimeRange[]>;
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
-  const [availability, setAvailability] = useState<Record<number, { start: string; end: string } | null>>({});
+  const [availability, setAvailability] = useState<DayAvailability>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -34,9 +34,10 @@ export default function AdminPage() {
       fetch('/api/availability')
         .then((r) => r.json())
         .then((data) => {
-          const map: Record<number, { start: string; end: string } | null> = {};
+          const map: DayAvailability = {};
           for (const entry of data.availability || []) {
-            map[entry.dayOfWeek] = { start: entry.startTime, end: entry.endTime };
+            if (!map[entry.dayOfWeek]) map[entry.dayOfWeek] = [];
+            map[entry.dayOfWeek].push({ start: entry.startTime, end: entry.endTime });
           }
           setAvailability(map);
           setLoading(false);
@@ -47,33 +48,59 @@ export default function AdminPage() {
 
   const toggleDay = (day: number) => {
     setAvailability((prev) => {
-      if (prev[day]) {
+      if (prev[day] && prev[day].length > 0) {
         const next = { ...prev };
         delete next[day];
         return next;
       }
-      return { ...prev, [day]: { start: '09:00', end: '17:00' } };
+      return { ...prev, [day]: [{ start: '09:00', end: '17:00' }] };
     });
     setSaved(false);
   };
 
-  const updateTime = (day: number, field: 'start' | 'end', value: string) => {
+  const addRange = (day: number) => {
     setAvailability((prev) => ({
       ...prev,
-      [day]: { ...prev[day]!, [field]: value },
+      [day]: [...(prev[day] || []), { start: '13:00', end: '17:00' }],
     }));
+    setSaved(false);
+  };
+
+  const removeRange = (day: number, index: number) => {
+    setAvailability((prev) => {
+      const ranges = [...(prev[day] || [])];
+      ranges.splice(index, 1);
+      if (ranges.length === 0) {
+        const next = { ...prev };
+        delete next[day];
+        return next;
+      }
+      return { ...prev, [day]: ranges };
+    });
+    setSaved(false);
+  };
+
+  const updateTime = (day: number, index: number, field: 'start' | 'end', value: string) => {
+    setAvailability((prev) => {
+      const ranges = [...(prev[day] || [])];
+      ranges[index] = { ...ranges[index], [field]: value };
+      return { ...prev, [day]: ranges };
+    });
     setSaved(false);
   };
 
   const handleSave = async () => {
     setSaving(true);
-    const entries: AvailabilityEntry[] = Object.entries(availability)
-      .filter(([_, val]) => val !== null)
-      .map(([day, val]) => ({
-        dayOfWeek: parseInt(day),
-        startTime: val!.start,
-        endTime: val!.end,
-      }));
+    const entries: { dayOfWeek: number; startTime: string; endTime: string }[] = [];
+    for (const [day, ranges] of Object.entries(availability)) {
+      for (const range of ranges) {
+        entries.push({
+          dayOfWeek: parseInt(day),
+          startTime: range.start,
+          endTime: range.end,
+        });
+      }
+    }
 
     await fetch('/api/availability', {
       method: 'POST',
@@ -88,33 +115,45 @@ export default function AdminPage() {
 
   if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#E0DAD1' }}>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: '#13352F' }}></div>
       </div>
     );
   }
 
   if (!session) return null;
 
+  const isDayActive = (day: number) => availability[day] && availability[day].length > 0;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
+    <div className="min-h-screen" style={{ backgroundColor: '#E0DAD1' }}>
+      <header style={{ backgroundColor: '#F5F4F2', borderBottom: '1px solid #E5E4E0' }}>
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">RevFactor Scheduler</h1>
-            <p className="text-sm text-gray-500">Manage your availability</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold" style={{ color: '#13352F', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              rf.
+            </h1>
+            <span
+              className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-widest"
+              style={{ backgroundColor: '#13352F', color: 'rgba(255,255,255,0.8)' }}
+            >
+              Scheduler
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">{session.user?.name}</p>
-              <p className="text-xs text-gray-500">{session.user?.email}</p>
+              <p className="text-sm font-medium" style={{ color: '#181915' }}>{session.user?.name}</p>
+              <p className="text-xs" style={{ color: '#6B7280' }}>{session.user?.email}</p>
             </div>
             {session.user?.image && (
               <img src={session.user.image} alt="" className="w-9 h-9 rounded-full" />
             )}
             <button
               onClick={() => signOut({ callbackUrl: '/admin/login' })}
-              className="text-sm text-gray-500 hover:text-gray-700 ml-2"
+              className="text-sm ml-2 transition-colors"
+              style={{ color: '#6B7280' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#181915'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#6B7280'}
             >
               Sign out
             </button>
@@ -123,54 +162,89 @@ export default function AdminPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Weekly Availability</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Toggle days on/off and set your available hours for each day. Visitors can book 15-minute calls during these windows.
+        <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
+          <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Manage Availability</h2>
+          <h3 className="text-xl font-semibold mb-1" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            Weekly <span style={{ fontStyle: 'italic', color: '#13352F' }}>Schedule</span>
+          </h3>
+          <p className="text-sm mb-6" style={{ color: '#6B7280' }}>
+            Toggle days on/off and set your available hours. Add multiple time ranges per day.
           </p>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {DAYS.map((name, i) => (
-              <div key={i} className="flex items-center gap-4 py-3 border-b border-gray-100 last:border-0">
-                <button
-                  onClick={() => toggleDay(i)}
-                  className={`w-10 h-6 rounded-full relative transition-colors ${
-                    availability[i] ? 'bg-blue-600' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                      availability[i] ? 'left-[18px]' : 'left-0.5'
-                    }`}
-                  />
-                </button>
-                <span className={`w-28 text-sm font-medium ${availability[i] ? 'text-gray-900' : 'text-gray-400'}`}>
-                  {name}
-                </span>
-                {availability[i] ? (
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={availability[i]!.start}
-                      onChange={(e) => updateTime(i, 'start', e.target.value)}
-                      className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white"
+              <div key={i} className="py-3" style={{ borderBottom: '1px solid #EBEAE6' }}>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => toggleDay(i)}
+                    className="w-10 h-6 rounded-full relative transition-colors flex-shrink-0"
+                    style={{ backgroundColor: isDayActive(i) ? '#13352F' : '#C4BFB6' }}
+                  >
+                    <span
+                      className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform"
+                      style={{ left: isDayActive(i) ? '18px' : '2px' }}
+                    />
+                  </button>
+                  <span className="w-28 text-sm font-medium" style={{ color: isDayActive(i) ? '#181915' : '#9CA3AF' }}>
+                    {name}
+                  </span>
+                  {!isDayActive(i) && <span className="text-sm" style={{ color: '#9CA3AF' }}>Unavailable</span>}
+                </div>
+
+                {isDayActive(i) && (
+                  <div className="ml-14 mt-2 space-y-2">
+                    {availability[i].map((range, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <select
+                          value={range.start}
+                          onChange={(e) => updateTime(i, idx, 'start', e.target.value)}
+                          className="text-sm rounded-md px-3 py-1.5"
+                          style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                        >
+                          {TIME_OPTIONS.map((t) => (
+                            <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                          ))}
+                        </select>
+                        <span className="text-sm" style={{ color: '#9CA3AF' }}>to</span>
+                        <select
+                          value={range.end}
+                          onChange={(e) => updateTime(i, idx, 'end', e.target.value)}
+                          className="text-sm rounded-md px-3 py-1.5"
+                          style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                        >
+                          {TIME_OPTIONS.map((t) => (
+                            <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                          ))}
+                        </select>
+                        {availability[i].length > 1 && (
+                          <button
+                            onClick={() => removeRange(i, idx)}
+                            className="text-sm ml-1 transition-colors"
+                            style={{ color: '#C4BFB6' }}
+                            onMouseEnter={(e) => e.currentTarget.style.color = '#b91c1c'}
+                            onMouseLeave={(e) => e.currentTarget.style.color = '#C4BFB6'}
+                            title="Remove this range"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => addRange(i)}
+                      className="text-sm flex items-center gap-1 mt-1 transition-colors"
+                      style={{ color: '#13352F' }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                     >
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{formatTimeLabel(t)}</option>
-                      ))}
-                    </select>
-                    <span className="text-gray-400">to</span>
-                    <select
-                      value={availability[i]!.end}
-                      onChange={(e) => updateTime(i, 'end', e.target.value)}
-                      className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white"
-                    >
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{formatTimeLabel(t)}</option>
-                      ))}
-                    </select>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add another range
+                    </button>
                   </div>
-                ) : (
-                  <span className="text-sm text-gray-400">Unavailable</span>
                 )}
               </div>
             ))}
@@ -180,22 +254,26 @@ export default function AdminPage() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="text-white px-6 py-2 rounded-md text-sm font-medium disabled:opacity-50 transition-all"
+              style={{ backgroundColor: '#13352F' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a453d'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#13352F'}
             >
               {saving ? 'Saving...' : 'Save Availability'}
             </button>
-            {saved && <span className="text-sm text-green-600">Saved successfully!</span>}
+            {saved && <span className="text-sm" style={{ color: '#13352F' }}>Saved successfully!</span>}
           </div>
         </div>
 
-        <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Booking Page</h2>
-          <p className="text-sm text-gray-500 mb-3">Share this link or embed it on your website:</p>
-          <code className="block bg-gray-100 p-3 rounded-lg text-sm text-gray-700 break-all">
+        <div className="mt-6 rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
+          <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: '#9CA3AF' }}>Share</h2>
+          <h3 className="text-lg font-semibold mb-2" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>Booking Page</h3>
+          <p className="text-sm mb-3" style={{ color: '#6B7280' }}>Share this link or embed it on your website:</p>
+          <code className="block p-3 rounded-md text-sm break-all" style={{ backgroundColor: '#EBEAE6', color: '#4B5563' }}>
             {typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL}/
           </code>
-          <p className="text-sm text-gray-500 mt-3">Embed code:</p>
-          <code className="block bg-gray-100 p-3 rounded-lg text-sm text-gray-700 break-all">
+          <p className="text-sm mt-3" style={{ color: '#6B7280' }}>Embed code:</p>
+          <code className="block p-3 rounded-md text-sm break-all" style={{ backgroundColor: '#EBEAE6', color: '#4B5563' }}>
             {`<iframe src="${typeof window !== 'undefined' ? window.location.origin : process.env.NEXT_PUBLIC_APP_URL}/embed" width="100%" height="700" frameborder="0"></iframe>`}
           </code>
         </div>
