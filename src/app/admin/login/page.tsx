@@ -34,7 +34,7 @@ export default function LoginPage() {
           <div className="mt-8 flex items-center gap-3">
             <div className="flex -space-x-2">
               <img src="/federico.jpg" alt="Federico" className="w-9 h-9 rounded-full border-2 object-cover" style={{ borderColor: '#13352F' }} />
-              <div className="w-9 h-9 rounded-full border-2 flex items-center justify-center text-white text-xs font-semibold" style={{ backgroundColor: '#4a7c6b', borderColor: '#13352F' }}>E</div>
+              <img src="/emily.png" alt="Emily" className="w-9 h-9 rounded-full border-2 object-cover" style={{ borderColor: '#13352F' }} />
             </div>
             <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>Federico & Emily</span>
           </div>

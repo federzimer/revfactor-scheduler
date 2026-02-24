@@ -157,7 +157,7 @@ function BookingWidget() {
           <div className="px-6 py-3 flex items-center gap-3" style={{ backgroundColor: '#1a453d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex -space-x-2">
               <img src="/federico.jpg" alt="Federico" className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
-              <div className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-semibold" style={{ backgroundColor: '#4a7c6b', borderColor: '#1a453d' }}>E</div>
+              <img src="/emily.png" alt="Emily" className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
             </div>
             <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>Federico & Emily are ready to chat</span>
           </div>
