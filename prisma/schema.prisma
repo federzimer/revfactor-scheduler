@@ -35,16 +35,17 @@ model Session {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  name          String?
-  email         String?        @unique
-  emailVerified DateTime?
-  image         String?
-  accounts      Account[]
-  sessions      Session[]
-  availability   Availability[]
-  dateOverrides  DateOverride[]
-  bookings       Booking[]
+  id               String         @id @default(cuid())
+  name             String?
+  email            String?        @unique
+  emailVerified    DateTime?
+  image            String?
+  maxAdvanceDays   Int            @default(60) // how far in advance bookings can be made
+  accounts         Account[]
+  sessions         Session[]
+  availability     Availability[]
+  dateOverrides    DateOverride[]
+  bookings         Booking[]
 }
 
 model VerificationToken {

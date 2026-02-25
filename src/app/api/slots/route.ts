@@ -46,6 +46,14 @@ export async function GET(req: NextRequest) {
   const slotMap: Record<string, { id: string; name: string; image?: string }[]> = {};
 
   for (const user of adminUsers) {
+    // Check maxAdvanceDays
+    const maxDays = (user as any).maxAdvanceDays ?? 60;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const requestedDate = new Date(date + 'T12:00:00');
+    const daysFromNow = Math.ceil((requestedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysFromNow > maxDays) continue;
+
     // Check for date-specific override
     const override = user.dateOverrides[0]; // at most one per user per date
 

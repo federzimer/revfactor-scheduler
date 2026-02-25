@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getBusyTimes } from '@/lib/google-calendar';
+import { getBusyTimesRange } from '@/lib/google-calendar';
 import { generateTimeSlots, isSlotBusy } from '@/lib/utils';
 
 // GET /api/available-dates?from=2025-03-01&to=2025-03-31
 // Returns dates that have at least one admin with actual availability
-// (checks both weekly schedule AND Google Calendar freebusy)
+// (checks weekly schedule, date overrides, maxAdvanceDays, AND Google Calendar freebusy)
 export async function GET(req: NextRequest) {
   const from = req.nextUrl.searchParams.get('from');
   const to = req.nextUrl.searchParams.get('to');
@@ -27,6 +27,17 @@ export async function GET(req: NextRequest) {
     },
   });
 
+  // Fetch busy times for the entire range in ONE API call per user
+  const userBusyMap: Record<string, Record<string, { start: string; end: string }[]>> = {};
+  for (const user of adminUsers) {
+    try {
+      userBusyMap[user.id] = await getBusyTimesRange(user.id, from, to, timezone);
+    } catch (e) {
+      console.error(`Error fetching busy range for ${user.email}:`, e);
+      userBusyMap[user.id] = {};
+    }
+  }
+
   const availableDates: string[] = [];
   const fromDate = new Date(from + 'T12:00:00');
   const toDate = new Date(to + 'T12:00:00');
@@ -44,8 +55,13 @@ export async function GET(req: NextRequest) {
     let dateHasAvailability = false;
 
     for (const user of adminUsers) {
+      // Check maxAdvanceDays — skip if date is too far in the future for this user
+      const maxDays = (user as any).maxAdvanceDays ?? 60;
+      const daysFromNow = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysFromNow > maxDays) continue;
+
       // Check for date-specific override
-      const override = user.dateOverrides.find((o) => o.date === dateStr);
+      const override = user.dateOverrides.find((o: any) => o.date === dateStr);
 
       let timeRanges: { startTime: string; endTime: string }[] = [];
 
@@ -58,9 +74,9 @@ export async function GET(req: NextRequest) {
         }
       } else {
         // Check weekly availability for this day of week
-        const dayAvail = user.availability.filter((a) => a.dayOfWeek === dayOfWeek);
+        const dayAvail = user.availability.filter((a: any) => a.dayOfWeek === dayOfWeek);
         if (dayAvail.length === 0) continue;
-        timeRanges = dayAvail.map((a) => ({ startTime: a.startTime, endTime: a.endTime }));
+        timeRanges = dayAvail.map((a: any) => ({ startTime: a.startTime, endTime: a.endTime }));
       }
 
       // Generate time slots for this user's availability
@@ -70,16 +86,8 @@ export async function GET(req: NextRequest) {
 
       if (timeSlots.length === 0) continue;
 
-      // Check Google Calendar freebusy for this user on this date
-      let busyTimes: { start: string; end: string }[] = [];
-      try {
-        busyTimes = await getBusyTimes(user.id, dateStr, timezone);
-      } catch (e) {
-        // If we can't check freebusy, assume the date is available
-        // (better to show it and filter at slot level than to hide it)
-        dateHasAvailability = true;
-        break;
-      }
+      // Get this user's busy times for this specific date from the pre-fetched map
+      const busyTimes = userBusyMap[user.id]?.[dateStr] || [];
 
       // Check if at least one slot is NOT busy
       const hasOpenSlot = timeSlots.some(

@@ -61,6 +61,79 @@ export async function getBusyTimes(
 }
 
 /**
+ * Get busy times from Google Calendar for a user over a date range (single API call).
+ * Returns a map of date string -> BusySlot[].
+ */
+export async function getBusyTimesRange(
+  userId: string,
+  fromDate: string, // "2025-03-01"
+  toDate: string,   // "2025-03-31"
+  timezone: string
+): Promise<Record<string, BusySlot[]>> {
+  const accessToken = await getGoogleAccessToken(userId);
+  if (!accessToken) {
+    console.warn(`No access token for user ${userId} — skipping freebusy range check`);
+    return {};
+  }
+
+  const calendar = getCalendarClient(accessToken);
+
+  try {
+    const response = await calendar.freebusy.query({
+      requestBody: {
+        timeMin: `${fromDate}T00:00:00`,
+        timeMax: `${toDate}T23:59:59`,
+        timeZone: timezone,
+        items: [{ id: 'primary' }],
+      },
+    });
+
+    const busySlots = response.data.calendars?.primary?.busy || [];
+    console.log(`Freebusy range for user ${userId} (${fromDate} to ${toDate}): ${busySlots.length} busy slots`);
+
+    // Group busy slots by date in the admin's timezone
+    const byDate: Record<string, BusySlot[]> = {};
+    for (const slot of busySlots) {
+      if (!slot.start || !slot.end) continue;
+
+      // Determine which date(s) this busy slot falls on in the admin's timezone
+      const startDate = new Date(slot.start);
+      const endDate = new Date(slot.end);
+
+      // Get the local date for the start of the busy slot
+      const startLocalDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(startDate);
+
+      const endLocalDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(endDate);
+
+      // Add to all dates the busy slot spans
+      const d = new Date(startLocalDate + 'T12:00:00');
+      const end = new Date(endLocalDate + 'T12:00:00');
+      while (d <= end) {
+        const dateStr = d.toISOString().split('T')[0];
+        if (!byDate[dateStr]) byDate[dateStr] = [];
+        byDate[dateStr].push({ start: slot.start, end: slot.end });
+        d.setDate(d.getDate() + 1);
+      }
+    }
+
+    return byDate;
+  } catch (error: any) {
+    console.error(`Error fetching busy times range for user ${userId}:`, error?.message || error);
+    return {};
+  }
+}
+
+/**
  * Create a Google Calendar event with Google Meet
  */
 export async function createCalendarEvent(

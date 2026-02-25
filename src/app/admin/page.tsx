@@ -1,10 +1,11 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { redirect } from 'next/navigation';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const SHORT_DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const h = Math.floor(i / 2);
   const m = i % 2 === 0 ? '00' : '30';
@@ -35,11 +36,27 @@ export default function AdminPage() {
 
   // Date overrides state
   const [dateOverrides, setDateOverrides] = useState<DateOverride[]>([]);
-  const [newOverrideDate, setNewOverrideDate] = useState('');
-  const [newOverrideMode, setNewOverrideMode] = useState<'block' | 'custom'>('block');
-  const [newOverrideStart, setNewOverrideStart] = useState('09:00');
-  const [newOverrideEnd, setNewOverrideEnd] = useState('17:00');
+
+  // Calendar navigation
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  // Date override modal
+  const [modalDate, setModalDate] = useState<string | null>(null);
+  const [modalMode, setModalMode] = useState<'block' | 'custom'>('block');
+  const [modalStart, setModalStart] = useState('09:00');
+  const [modalEnd, setModalEnd] = useState('17:00');
   const [savingOverride, setSavingOverride] = useState(false);
+
+  // Settings
+  const [maxAdvanceDays, setMaxAdvanceDays] = useState(60);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savedSettings, setSavedSettings] = useState(false);
+
+  // Calendar view toggle
+  const [calendarView, setCalendarView] = useState<'list' | 'calendar'>('calendar');
 
   useEffect(() => {
     if (status === 'unauthenticated') redirect('/admin/login');
@@ -47,7 +64,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      // Fetch weekly availability
       fetch('/api/availability')
         .then((r) => r.json())
         .then((data) => {
@@ -61,14 +77,66 @@ export default function AdminPage() {
         })
         .catch(() => setLoading(false));
 
-      // Fetch date overrides
       fetch('/api/date-overrides')
         .then((r) => r.json())
         .then((data) => setDateOverrides(data.overrides || []))
         .catch(() => {});
+
+      fetch('/api/admin-settings')
+        .then((r) => r.json())
+        .then((data) => setMaxAdvanceDays(data.maxAdvanceDays ?? 60))
+        .catch(() => {});
     }
   }, [status]);
 
+  // Calendar data
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const days: (number | null)[] = [];
+    for (let i = 0; i < firstDay; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(i);
+    // Pad to complete the last week
+    while (days.length % 7 !== 0) days.push(null);
+    return days;
+  }, [calendarMonth]);
+
+  const getDateStr = (day: number) => {
+    const y = calendarMonth.getFullYear();
+    const m = calendarMonth.getMonth() + 1;
+    return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
+
+  const getOverrideForDate = (dateStr: string) => {
+    return dateOverrides.find((o) => o.date === dateStr);
+  };
+
+  const getDayAvailForDate = (day: number) => {
+    const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+    const dow = date.getDay();
+    return availability[dow] || [];
+  };
+
+  const isDatePast = (day: number) => {
+    const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date <= today;
+  };
+
+  const isToday = (day: number) => {
+    const now = new Date();
+    return (
+      calendarMonth.getFullYear() === now.getFullYear() &&
+      calendarMonth.getMonth() === now.getMonth() &&
+      day === now.getDate()
+    );
+  };
+
+  // Weekly schedule handlers
   const toggleDay = (day: number) => {
     setAvailability((prev) => {
       if (prev[day] && prev[day].length > 0) {
@@ -136,17 +204,32 @@ export default function AdminPage() {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const handleAddOverride = async () => {
-    if (!newOverrideDate) return;
+  // Date override handlers
+  const openOverrideModal = (dateStr: string) => {
+    const existing = getOverrideForDate(dateStr);
+    if (existing) {
+      setModalMode(existing.isBlocked ? 'block' : 'custom');
+      setModalStart(existing.startTime || '09:00');
+      setModalEnd(existing.endTime || '17:00');
+    } else {
+      setModalMode('block');
+      setModalStart('09:00');
+      setModalEnd('17:00');
+    }
+    setModalDate(dateStr);
+  };
+
+  const handleSaveOverride = async () => {
+    if (!modalDate) return;
     setSavingOverride(true);
 
     const body: any = {
-      date: newOverrideDate,
-      isBlocked: newOverrideMode === 'block',
+      date: modalDate,
+      isBlocked: modalMode === 'block',
     };
-    if (newOverrideMode === 'custom') {
-      body.startTime = newOverrideStart;
-      body.endTime = newOverrideEnd;
+    if (modalMode === 'custom') {
+      body.startTime = modalStart;
+      body.endTime = modalEnd;
     }
 
     const res = await fetch('/api/date-overrides', {
@@ -166,15 +249,39 @@ export default function AdminPage() {
         }
         return [...prev, data.override].sort((a, b) => a.date.localeCompare(b.date));
       });
-      setNewOverrideDate('');
     }
     setSavingOverride(false);
+    setModalDate(null);
   };
 
-  const handleRemoveOverride = async (id: string) => {
-    await fetch(`/api/date-overrides?id=${id}`, { method: 'DELETE' });
-    setDateOverrides((prev) => prev.filter((o) => o.id !== id));
+  const handleRemoveOverride = async (dateStr: string) => {
+    const override = getOverrideForDate(dateStr);
+    if (!override) return;
+    await fetch(`/api/date-overrides?id=${override.id}`, { method: 'DELETE' });
+    setDateOverrides((prev) => prev.filter((o) => o.id !== override.id));
+    setModalDate(null);
   };
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    await fetch('/api/admin-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxAdvanceDays }),
+    });
+    setSavingSettings(false);
+    setSavedSettings(true);
+    setTimeout(() => setSavedSettings(false), 3000);
+  };
+
+  const prevMonth = () => {
+    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+  const nextMonth = () => {
+    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   if (status === 'loading' || loading) {
     return (
@@ -191,7 +298,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#E0DAD1' }}>
       <header style={{ backgroundColor: '#F5F4F2', borderBottom: '1px solid #E5E4E0' }}>
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold" style={{ color: '#13352F', fontFamily: 'Georgia, "Times New Roman", serif' }}>
               rf.
@@ -224,7 +331,48 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+        {/* Booking Settings */}
+        <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
+          <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Settings</h2>
+          <h3 className="text-xl font-semibold mb-1" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            Booking <span style={{ fontStyle: 'italic', color: '#13352F' }}>Limits</span>
+          </h3>
+          <p className="text-sm mb-5" style={{ color: '#6B7280' }}>
+            Control how far in advance visitors can book a call with you.
+          </p>
+
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium" style={{ color: '#181915' }}>Allow bookings up to</label>
+            <select
+              value={maxAdvanceDays}
+              onChange={(e) => { setMaxAdvanceDays(parseInt(e.target.value)); setSavedSettings(false); }}
+              className="text-sm rounded-md px-3 py-1.5"
+              style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+            >
+              <option value={7}>1 week</option>
+              <option value={14}>2 weeks</option>
+              <option value={30}>1 month</option>
+              <option value={60}>2 months</option>
+              <option value={90}>3 months</option>
+              <option value={180}>6 months</option>
+              <option value={365}>1 year</option>
+            </select>
+            <label className="text-sm" style={{ color: '#6B7280' }}>in advance</label>
+            <button
+              onClick={handleSaveSettings}
+              disabled={savingSettings}
+              className="text-white px-4 py-1.5 rounded-md text-sm font-medium disabled:opacity-50 transition-all ml-2"
+              style={{ backgroundColor: '#13352F' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a453d'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#13352F'}
+            >
+              {savingSettings ? 'Saving...' : 'Save'}
+            </button>
+            {savedSettings && <span className="text-sm" style={{ color: '#13352F' }}>Saved!</span>}
+          </div>
+        </div>
+
         {/* Weekly Schedule */}
         <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
           <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Manage Availability</h2>
@@ -329,129 +477,202 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Date Overrides */}
-        <div className="mt-6 rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
-          <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Date-Specific</h2>
-          <h3 className="text-xl font-semibold mb-1" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
-            Date <span style={{ fontStyle: 'italic', color: '#13352F' }}>Overrides</span>
-          </h3>
-          <p className="text-sm mb-6" style={{ color: '#6B7280' }}>
-            Block off specific dates or set custom hours that override your weekly schedule.
-          </p>
-
-          {/* Add new override */}
-          <div className="p-4 rounded-lg mb-4" style={{ backgroundColor: '#EBEAE6', border: '1px solid #E5E4E0' }}>
-            <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Date</label>
-                <input
-                  type="date"
-                  value={newOverrideDate}
-                  onChange={(e) => setNewOverrideDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="text-sm rounded-md px-3 py-1.5"
-                  style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Type</label>
-                <select
-                  value={newOverrideMode}
-                  onChange={(e) => setNewOverrideMode(e.target.value as 'block' | 'custom')}
-                  className="text-sm rounded-md px-3 py-1.5"
-                  style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
-                >
-                  <option value="block">Block off (unavailable)</option>
-                  <option value="custom">Custom hours</option>
-                </select>
-              </div>
-              {newOverrideMode === 'custom' && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>From</label>
-                    <select
-                      value={newOverrideStart}
-                      onChange={(e) => setNewOverrideStart(e.target.value)}
-                      className="text-sm rounded-md px-3 py-1.5"
-                      style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
-                    >
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{formatTimeLabel(t)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>To</label>
-                    <select
-                      value={newOverrideEnd}
-                      onChange={(e) => setNewOverrideEnd(e.target.value)}
-                      className="text-sm rounded-md px-3 py-1.5"
-                      style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
-                    >
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{formatTimeLabel(t)}</option>
-                      ))}
-                    </select>
-                  </div>
-                </>
-              )}
+        {/* Date Overrides — Calendly-style Calendar */}
+        <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
+          <div className="flex items-center justify-between mb-1">
+            <div>
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Date-Specific</h2>
+              <h3 className="text-xl font-semibold" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+                Date <span style={{ fontStyle: 'italic', color: '#13352F' }}>Overrides</span>
+              </h3>
+            </div>
+            <div className="flex items-center rounded-lg overflow-hidden" style={{ border: '1px solid #E5E4E0' }}>
               <button
-                onClick={handleAddOverride}
-                disabled={!newOverrideDate || savingOverride}
-                className="text-white px-4 py-1.5 rounded-md text-sm font-medium disabled:opacity-50 transition-all"
-                style={{ backgroundColor: '#13352F' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a453d'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#13352F'}
+                onClick={() => setCalendarView('list')}
+                className="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                style={{
+                  backgroundColor: calendarView === 'list' ? 'white' : 'transparent',
+                  color: calendarView === 'list' ? '#181915' : '#9CA3AF',
+                }}
               >
-                {savingOverride ? 'Adding...' : 'Add Override'}
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+                List
+              </button>
+              <button
+                onClick={() => setCalendarView('calendar')}
+                className="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                style={{
+                  backgroundColor: calendarView === 'calendar' ? 'white' : 'transparent',
+                  color: calendarView === 'calendar' ? '#181915' : '#9CA3AF',
+                }}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Calendar
               </button>
             </div>
           </div>
+          <p className="text-sm mb-6" style={{ color: '#6B7280' }}>
+            Click a date to block it off or set custom hours that override your weekly schedule.
+          </p>
 
-          {/* List of overrides */}
-          {dateOverrides.length === 0 ? (
-            <p className="text-sm" style={{ color: '#9CA3AF' }}>No date overrides set. Your weekly schedule will be used for all dates.</p>
-          ) : (
-            <div className="space-y-2">
-              {dateOverrides.map((override) => (
-                <div
-                  key={override.id}
-                  className="flex items-center justify-between px-4 py-3 rounded-lg"
-                  style={{ backgroundColor: 'white', border: '1px solid #E5E4E0' }}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium" style={{ color: '#181915' }}>
-                      {new Date(override.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                    </span>
-                    {override.isBlocked ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef2f2', color: '#b91c1c' }}>
-                        Blocked
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ecfdf5', color: '#065f46' }}>
-                        {formatTimeLabel(override.startTime || '')} – {formatTimeLabel(override.endTime || '')}
-                      </span>
-                    )}
+          {calendarView === 'calendar' ? (
+            <>
+              {/* Calendar header */}
+              <div className="flex items-center justify-between mb-4">
+                <button onClick={prevMonth} className="p-1.5 rounded-md hover:bg-white/50 transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="#4B5563" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <h4 className="text-base font-semibold" style={{ color: '#181915' }}>{monthLabel}</h4>
+                <button onClick={nextMonth} className="p-1.5 rounded-md hover:bg-white/50 transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="#4B5563" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Day headers */}
+              <div className="grid grid-cols-7 mb-1">
+                {SHORT_DAYS.map((d) => (
+                  <div key={d} className="text-center text-[10px] font-semibold uppercase tracking-widest py-2" style={{ color: '#9CA3AF' }}>
+                    {d}
                   </div>
-                  <button
-                    onClick={() => handleRemoveOverride(override.id)}
-                    className="text-sm transition-colors"
-                    style={{ color: '#C4BFB6' }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = '#b91c1c'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = '#C4BFB6'}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                ))}
+              </div>
+
+              {/* Calendar grid */}
+              <div className="grid grid-cols-7" style={{ border: '1px solid #E5E4E0', borderRadius: '8px', overflow: 'hidden' }}>
+                {calendarDays.map((day, i) => {
+                  if (day === null) {
+                    return <div key={i} className="min-h-[90px] p-2" style={{ backgroundColor: '#EBEAE6', borderRight: i % 7 !== 6 ? '1px solid #E5E4E0' : 'none', borderBottom: '1px solid #E5E4E0' }} />;
+                  }
+
+                  const dateStr = getDateStr(day);
+                  const override = getOverrideForDate(dateStr);
+                  const dayAvail = getDayAvailForDate(day);
+                  const past = isDatePast(day);
+                  const today = isToday(day);
+                  const hasAvail = dayAvail.length > 0 && !override?.isBlocked;
+                  const isBlocked = override?.isBlocked;
+                  const hasCustom = override && !override.isBlocked && override.startTime;
+
+                  return (
+                    <div
+                      key={i}
+                      className="min-h-[90px] p-2 relative group transition-colors"
+                      style={{
+                        backgroundColor: past ? '#EBEAE6' : isBlocked ? '#fef2f2' : 'white',
+                        borderRight: i % 7 !== 6 ? '1px solid #E5E4E0' : 'none',
+                        borderBottom: '1px solid #E5E4E0',
+                        cursor: past ? 'default' : 'pointer',
+                        opacity: past ? 0.5 : 1,
+                      }}
+                      onClick={() => !past && openOverrideModal(dateStr)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <span
+                          className="text-sm font-medium"
+                          style={{
+                            color: today ? '#13352F' : '#181915',
+                            fontWeight: today ? 700 : 500,
+                          }}
+                        >
+                          {today ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full" style={{ backgroundColor: '#13352F', color: 'white' }}>
+                              {day}
+                            </span>
+                          ) : day}
+                        </span>
+                        {!past && (override || hasAvail) && (
+                          <span
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ color: '#9CA3AF' }}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                            </svg>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Show hours */}
+                      {!past && (
+                        <div className="mt-1">
+                          {isBlocked ? (
+                            <span className="text-[10px] font-medium" style={{ color: '#b91c1c' }}>Blocked</span>
+                          ) : hasCustom ? (
+                            <span className="text-[10px]" style={{ color: '#065f46' }}>
+                              {formatTimeLabel(override.startTime!)} – {formatTimeLabel(override.endTime!)}
+                            </span>
+                          ) : hasAvail ? (
+                            <div>
+                              {dayAvail.map((r, ri) => (
+                                <div key={ri} className="text-[10px]" style={{ color: '#6B7280' }}>
+                                  {formatTimeLabel(r.start)} – {formatTimeLabel(r.end)}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            /* List view */
+            <>
+              {dateOverrides.length === 0 ? (
+                <p className="text-sm" style={{ color: '#9CA3AF' }}>No date overrides set. Your weekly schedule will be used for all dates.</p>
+              ) : (
+                <div className="space-y-2">
+                  {dateOverrides.map((override) => (
+                    <div
+                      key={override.id}
+                      className="flex items-center justify-between px-4 py-3 rounded-lg"
+                      style={{ backgroundColor: 'white', border: '1px solid #E5E4E0' }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium" style={{ color: '#181915' }}>
+                          {new Date(override.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                        {override.isBlocked ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#fef2f2', color: '#b91c1c' }}>
+                            Blocked
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#ecfdf5', color: '#065f46' }}>
+                            {formatTimeLabel(override.startTime || '')} – {formatTimeLabel(override.endTime || '')}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleRemoveOverride(override.date)}
+                        className="text-sm transition-colors"
+                        style={{ color: '#C4BFB6' }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#b91c1c'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#C4BFB6'}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
 
         {/* Share / Embed */}
-        <div className="mt-6 rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
+        <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
           <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: '#9CA3AF' }}>Share</h2>
           <h3 className="text-lg font-semibold mb-2" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>Booking Page</h3>
           <p className="text-sm mb-3" style={{ color: '#6B7280' }}>Share this link or embed it on your website:</p>
@@ -464,6 +685,113 @@ export default function AdminPage() {
           </code>
         </div>
       </main>
+
+      {/* Override Modal */}
+      {modalDate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setModalDate(null)}>
+          <div
+            className="rounded-xl shadow-xl p-6 w-full max-w-md"
+            style={{ backgroundColor: '#F5F4F2' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-1" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              Override for{' '}
+              <span style={{ color: '#13352F' }}>
+                {new Date(modalDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </span>
+            </h3>
+            <p className="text-sm mb-5" style={{ color: '#6B7280' }}>
+              Set custom hours or block this date entirely.
+            </p>
+
+            <div className="space-y-4">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setModalMode('block')}
+                  className="flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: modalMode === 'block' ? '#fef2f2' : 'white',
+                    color: modalMode === 'block' ? '#b91c1c' : '#6B7280',
+                    border: modalMode === 'block' ? '2px solid #fca5a5' : '1px solid #E5E4E0',
+                  }}
+                >
+                  Block off
+                </button>
+                <button
+                  onClick={() => setModalMode('custom')}
+                  className="flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: modalMode === 'custom' ? '#ecfdf5' : 'white',
+                    color: modalMode === 'custom' ? '#065f46' : '#6B7280',
+                    border: modalMode === 'custom' ? '2px solid #6ee7b7' : '1px solid #E5E4E0',
+                  }}
+                >
+                  Custom hours
+                </button>
+              </div>
+
+              {modalMode === 'custom' && (
+                <div className="flex items-center gap-3">
+                  <select
+                    value={modalStart}
+                    onChange={(e) => setModalStart(e.target.value)}
+                    className="text-sm rounded-md px-3 py-2 flex-1"
+                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                  >
+                    {TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm" style={{ color: '#9CA3AF' }}>to</span>
+                  <select
+                    value={modalEnd}
+                    onChange={(e) => setModalEnd(e.target.value)}
+                    className="text-sm rounded-md px-3 py-2 flex-1"
+                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                  >
+                    {TIME_OPTIONS.map((t) => (
+                      <option key={t} value={t}>{formatTimeLabel(t)}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <div>
+                  {getOverrideForDate(modalDate) && (
+                    <button
+                      onClick={() => handleRemoveOverride(modalDate)}
+                      className="text-sm transition-colors"
+                      style={{ color: '#b91c1c' }}
+                    >
+                      Remove override
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setModalDate(null)}
+                    className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                    style={{ color: '#6B7280' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveOverride}
+                    disabled={savingOverride}
+                    className="text-white px-5 py-2 rounded-md text-sm font-medium disabled:opacity-50 transition-all"
+                    style={{ backgroundColor: '#13352F' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a453d'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#13352F'}
+                  >
+                    {savingOverride ? 'Saving...' : 'Apply'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
