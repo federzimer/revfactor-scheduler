@@ -14,6 +14,39 @@ export interface CalendarEvent {
   meetLink?: string;
 }
 
+/**
+ * Get the UTC offset string for a timezone on a given date (e.g. "-05:00" for EST)
+ */
+function getTimezoneOffsetString(timezone: string, date: Date): string {
+  // Use Intl to find the UTC offset for the given timezone
+  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+  const offsetMinutes = (utcDate.getTime() - tzDate.getTime()) / 60000;
+  const sign = offsetMinutes <= 0 ? '+' : '-';
+  const absOffset = Math.abs(offsetMinutes);
+  const hours = String(Math.floor(absOffset / 60)).padStart(2, '0');
+  const minutes = String(absOffset % 60).padStart(2, '0');
+  return `${sign}${hours}:${minutes}`;
+}
+
+/**
+ * Get start of day as RFC3339 timestamp in the given timezone
+ */
+function getStartOfDayISO(date: string, timezone: string): string {
+  const d = new Date(`${date}T12:00:00Z`); // use noon to avoid DST edge cases
+  const offset = getTimezoneOffsetString(timezone, d);
+  return `${date}T00:00:00${offset}`;
+}
+
+/**
+ * Get end of day as RFC3339 timestamp in the given timezone
+ */
+function getEndOfDayISO(date: string, timezone: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  const offset = getTimezoneOffsetString(timezone, d);
+  return `${date}T23:59:59${offset}`;
+}
+
 function getCalendarClient(accessToken: string) {
   const auth = new google.auth.OAuth2();
   auth.setCredentials({ access_token: accessToken });
@@ -36,13 +69,18 @@ export async function getBusyTimes(
 
   const calendar = getCalendarClient(accessToken);
 
-  // Use timezone-aware date construction to avoid UTC offset issues on Vercel
-  // The Google Calendar API freebusy endpoint accepts ISO strings and a timeZone param
+  // Google freebusy API requires full RFC3339 timestamps with timezone offset
+  // We use the timezone to construct proper ISO strings
   try {
+    // Build proper Date objects for the start/end of the day in the given timezone
+    const timeMin = getStartOfDayISO(date, timezone);
+    const timeMax = getEndOfDayISO(date, timezone);
+    console.log(`Freebusy query for ${date}: timeMin=${timeMin}, timeMax=${timeMax}`);
+
     const response = await calendar.freebusy.query({
       requestBody: {
-        timeMin: `${date}T00:00:00`,
-        timeMax: `${date}T23:59:59`,
+        timeMin,
+        timeMax,
         timeZone: timezone,
         items: [{ id: 'primary' }],
       },
@@ -79,10 +117,14 @@ export async function getBusyTimesRange(
   const calendar = getCalendarClient(accessToken);
 
   try {
+    const timeMin = getStartOfDayISO(fromDate, timezone);
+    const timeMax = getEndOfDayISO(toDate, timezone);
+    console.log(`Freebusy range query ${fromDate} to ${toDate}: timeMin=${timeMin}, timeMax=${timeMax}`);
+
     const response = await calendar.freebusy.query({
       requestBody: {
-        timeMin: `${fromDate}T00:00:00`,
-        timeMax: `${toDate}T23:59:59`,
+        timeMin,
+        timeMax,
         timeZone: timezone,
         items: [{ id: 'primary' }],
       },

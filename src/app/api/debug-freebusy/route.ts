@@ -65,10 +65,24 @@ export async function GET(req: NextRequest) {
       auth.setCredentials({ access_token: accessToken });
       const calendar = google.calendar({ version: 'v3', auth });
 
+      // Calculate proper timezone offset for RFC3339
+      const noon = new Date(`${date}T12:00:00Z`);
+      const utcD = new Date(noon.toLocaleString('en-US', { timeZone: 'UTC' }));
+      const tzD = new Date(noon.toLocaleString('en-US', { timeZone: timezone }));
+      const offMin = (utcD.getTime() - tzD.getTime()) / 60000;
+      const sign = offMin <= 0 ? '+' : '-';
+      const absOff = Math.abs(offMin);
+      const offStr = `${sign}${String(Math.floor(absOff / 60)).padStart(2, '0')}:${String(absOff % 60).padStart(2, '0')}`;
+
+      const timeMin = `${date}T00:00:00${offStr}`;
+      const timeMax = `${date}T23:59:59${offStr}`;
+      userDebug.timeMinUsed = timeMin;
+      userDebug.timeMaxUsed = timeMax;
+
       const response = await calendar.freebusy.query({
         requestBody: {
-          timeMin: `${date}T00:00:00`,
-          timeMax: `${date}T23:59:59`,
+          timeMin,
+          timeMax,
           timeZone: timezone,
           items: [{ id: 'primary' }],
         },
