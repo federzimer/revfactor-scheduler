@@ -4,7 +4,7 @@ import { createCalendarEvent } from '@/lib/google-calendar';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { date, startTime, endTime, userId, visitorName, visitorEmail, visitorCompany } = body;
+  const { date, startTime, endTime, userId, visitorName, visitorEmail, visitorPhone, visitorAirbnbLink, visitorNotes } = body;
 
   if (!date || !startTime || !endTime || !userId || !visitorName || !visitorEmail) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -27,6 +27,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This slot is no longer available' }, { status: 409 });
   }
 
+  // Build description with all visitor info
+  const descriptionParts = [
+    `Discovery call with ${visitorName}`,
+    `Email: ${visitorEmail}`,
+  ];
+  if (visitorPhone) descriptionParts.push(`Phone: ${visitorPhone}`);
+  if (visitorAirbnbLink) descriptionParts.push(`Airbnb Listing: ${visitorAirbnbLink}`);
+  if (visitorNotes) descriptionParts.push(`\nNotes to prepare:\n${visitorNotes}`);
+  descriptionParts.push(`\nBooked via ${companyName} Scheduler`);
+
   // Create Google Calendar event with Meet link
   const startDateTime = `${date}T${startTime}:00`;
   const endDateTime = `${date}T${endTime}:00`;
@@ -34,8 +44,8 @@ export async function POST(req: NextRequest) {
   let calendarEvent = null;
   try {
     calendarEvent = await createCalendarEvent(userId, {
-      summary: `${companyName} Sales Call - ${visitorName}`,
-      description: `Sales call with ${visitorName}${visitorCompany ? ` from ${visitorCompany}` : ''}\nEmail: ${visitorEmail}\n\nBooked via ${companyName} Scheduler`,
+      summary: `${companyName} Discovery Call - ${visitorName}`,
+      description: descriptionParts.join('\n'),
       startTime: startDateTime,
       endTime: endDateTime,
       attendeeEmail: visitorEmail,
@@ -54,7 +64,9 @@ export async function POST(req: NextRequest) {
       endTime,
       visitorName,
       visitorEmail,
-      visitorCompany: visitorCompany || null,
+      visitorPhone: visitorPhone || null,
+      visitorAirbnbLink: visitorAirbnbLink || null,
+      visitorNotes: visitorNotes || null,
       meetLink: calendarEvent?.meetLink || null,
       calendarEventId: calendarEvent?.id || null,
     },

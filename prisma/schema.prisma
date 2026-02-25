@@ -42,8 +42,9 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
-  availability  Availability[]
-  bookings      Booking[]
+  availability   Availability[]
+  dateOverrides  DateOverride[]
+  bookings       Booking[]
 }
 
 model VerificationToken {
@@ -63,18 +64,33 @@ model Availability {
   user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model DateOverride {
+  id        String  @id @default(cuid())
+  userId    String
+  date      String  // "2025-03-15" format
+  isBlocked Boolean @default(true) // true = completely unavailable
+  startTime String? // custom hours (if not blocked)
+  endTime   String? // custom hours (if not blocked)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
 model Booking {
-  id             String   @id @default(cuid())
-  userId         String
-  date           String   // "2025-03-15" format
-  startTime      String   // "10:00" format
-  endTime        String   // "10:15" format
-  visitorName    String
-  visitorEmail   String
-  visitorCompany String?
-  meetLink       String?
+  id              String   @id @default(cuid())
+  userId          String
+  date            String   // "2025-03-15" format
+  startTime       String   // "10:00" format
+  endTime         String   // "10:15" format
+  visitorName     String
+  visitorEmail    String
+  visitorPhone    String?
+  visitorCompany  String?
+  visitorAirbnbLink String?
+  visitorNotes    String?
+  meetLink        String?
   calendarEventId String?
-  status         String   @default("confirmed") // confirmed, cancelled
-  createdAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id])
+  status          String   @default("confirmed") // confirmed, cancelled
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id])
 }

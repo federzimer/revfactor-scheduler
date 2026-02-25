@@ -3,6 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { getBusyTimes } from '@/lib/google-calendar';
 import { generateTimeSlots, isSlotBusy } from '@/lib/utils';
 
+const PHOTO_FALLBACK: Record<string, string> = {
+  'federico@blackbirdhm.com': '/federico.jpg',
+  'emily@blackbirdhm.com': '/emily.png',
+};
+
 export interface AvailableSlot {
   start: string;
   end: string;
@@ -28,6 +33,7 @@ export async function GET(req: NextRequest) {
     where: { email: { in: adminEmails } },
     include: {
       availability: { where: { dayOfWeek } },
+      dateOverrides: { where: { date } },
     },
   });
 
@@ -40,11 +46,27 @@ export async function GET(req: NextRequest) {
   const slotMap: Record<string, { id: string; name: string; image?: string }[]> = {};
 
   for (const user of adminUsers) {
-    if (user.availability.length === 0) continue;
+    // Check for date-specific override
+    const override = user.dateOverrides[0]; // at most one per user per date
 
-    // Combine slots from all time ranges for this day
-    const timeSlots = user.availability.flatMap((avail) =>
-      generateTimeSlots(avail.startTime, avail.endTime, duration)
+    let timeRanges: { startTime: string; endTime: string }[] = [];
+
+    if (override) {
+      if (override.isBlocked) continue; // user blocked this date entirely
+      if (override.startTime && override.endTime) {
+        timeRanges = [{ startTime: override.startTime, endTime: override.endTime }];
+      } else {
+        continue; // blocked with no custom hours
+      }
+    } else {
+      // Use weekly availability
+      if (user.availability.length === 0) continue;
+      timeRanges = user.availability.map((a) => ({ startTime: a.startTime, endTime: a.endTime }));
+    }
+
+    // Combine slots from all time ranges
+    const timeSlots = timeRanges.flatMap((range) =>
+      generateTimeSlots(range.startTime, range.endTime, duration)
     );
 
     // Get Google Calendar busy times
@@ -54,6 +76,9 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       console.error(`Error getting busy times for ${user.email}:`, e);
     }
+
+    // Resolve profile photo with fallback
+    const userImage = user.image || PHOTO_FALLBACK[user.email?.toLowerCase() || ''] || undefined;
 
     for (const slot of timeSlots) {
       // Check if slot conflicts with Google Calendar
@@ -71,7 +96,7 @@ export async function GET(req: NextRequest) {
       slotMap[key].push({
         id: user.id,
         name: user.name || user.email || 'Team Member',
-        image: user.image || undefined,
+        image: userImage,
       });
     }
   }

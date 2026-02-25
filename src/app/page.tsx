@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 
 interface AvailableUser {
   id: string;
@@ -44,24 +44,33 @@ function BookingWidget() {
   const [booking, setBooking] = useState<BookingResult['booking'] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
+  const [loadingDates, setLoadingDates] = useState(true);
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
 
-  // Build set of available dates (next 14 days, weekdays only)
-  const availableDates = useMemo(() => {
-    const dates = new Set<string>();
-    const today = new Date();
-    for (let i = 1; i <= 14; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + i);
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) { // skip weekends
-        dates.add(d.toISOString().split('T')[0]);
+  // Fetch available dates from the server
+  useEffect(() => {
+    const fetchAvailableDates = async () => {
+      setLoadingDates(true);
+      const today = new Date();
+      const from = today.toISOString().split('T')[0];
+      const toDate = new Date(today);
+      toDate.setDate(toDate.getDate() + 60); // look ahead 60 days
+      const to = toDate.toISOString().split('T')[0];
+
+      try {
+        const res = await fetch(`/api/available-dates?from=${from}&to=${to}`);
+        const data = await res.json();
+        setAvailableDates(new Set(data.availableDates || []));
+      } catch {
+        setAvailableDates(new Set());
       }
-    }
-    return dates;
+      setLoadingDates(false);
+    };
+    fetchAvailableDates();
   }, []);
 
   const fetchSlots = async (date: string) => {
@@ -121,7 +130,9 @@ function BookingWidget() {
           userId: selectedUser.id,
           visitorName: formData.get('name'),
           visitorEmail: formData.get('email'),
-          visitorCompany: formData.get('company'),
+          visitorPhone: formData.get('phone'),
+          visitorAirbnbLink: formData.get('airbnbLink'),
+          visitorNotes: formData.get('notes'),
         }),
       });
 
@@ -196,13 +207,19 @@ function BookingWidget() {
           {step === 'date' && (
             <div>
               <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-4" style={{ color: '#9CA3AF' }}>Select a date</h2>
-              <CalendarGrid
-                viewMonth={viewMonth}
-                availableDates={availableDates}
-                selectedDate={selectedDate}
-                onSelect={handleDateSelect}
-                onNavigate={navigateMonth}
-              />
+              {loadingDates ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2" style={{ borderColor: '#13352F' }}></div>
+                </div>
+              ) : (
+                <CalendarGrid
+                  viewMonth={viewMonth}
+                  availableDates={availableDates}
+                  selectedDate={selectedDate}
+                  onSelect={handleDateSelect}
+                  onNavigate={navigateMonth}
+                />
+              )}
             </div>
           )}
 
@@ -260,13 +277,7 @@ function BookingWidget() {
                           <div className="flex items-center gap-2">
                             <div className="flex -space-x-1.5">
                               {slot.availableUsers.map((u) => (
-                                u.image ? (
-                                  <img key={u.id} src={u.image} alt={u.name} className="w-6 h-6 rounded-full border-2 border-white" />
-                                ) : (
-                                  <div key={u.id} className="w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-semibold" style={{ backgroundColor: '#d1ddd6', color: '#13352F' }}>
-                                    {u.name.charAt(0)}
-                                  </div>
-                                )
+                                <img key={u.id} src={u.image || '/default-avatar.png'} alt={u.name} className="w-6 h-6 rounded-full border-2 border-white object-cover" />
                               ))}
                             </div>
                             <span className="text-xs" style={{ color: '#9CA3AF' }}>
@@ -291,13 +302,7 @@ function BookingWidget() {
                               onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.backgroundColor = '#f9f8f6'; }}
                               onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.backgroundColor = 'white'; }}
                             >
-                              {user.image ? (
-                                <img src={user.image} alt={user.name} className="w-8 h-8 rounded-full" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold" style={{ backgroundColor: '#d1ddd6', color: '#13352F' }}>
-                                  {user.name.charAt(0)}
-                                </div>
-                              )}
+                              <img src={user.image || '/default-avatar.png'} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
                               <span className="font-medium" style={{ color: '#181915' }}>{user.name}</span>
                             </button>
                           ))}
@@ -326,13 +331,7 @@ function BookingWidget() {
 
               <div className="rounded-lg p-4 mb-5" style={{ backgroundColor: '#EBEAE6', border: '1px solid #E5E4E0' }}>
                 <div className="flex items-center gap-3">
-                  {selectedUser.image ? (
-                    <img src={selectedUser.image} alt={selectedUser.name} className="w-10 h-10 rounded-full" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold" style={{ backgroundColor: '#13352F' }}>
-                      {selectedUser.name.charAt(0)}
-                    </div>
-                  )}
+                  <img src={selectedUser.image || '/default-avatar.png'} alt={selectedUser.name} className="w-10 h-10 rounded-full object-cover" />
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
                       {formatTimeDisplay(selectedSlot.start)} – {formatTimeDisplay(selectedSlot.end)}
@@ -369,18 +368,43 @@ function BookingWidget() {
                     style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
                     onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
                     onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
-                    placeholder="john@company.com"
+                    placeholder="john@example.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Company</label>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Phone</label>
                   <input
-                    name="company"
+                    name="phone"
+                    type="tel"
                     className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all"
                     style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
                     onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
                     onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
-                    placeholder="Acme Corp"
+                    placeholder="+1 (555) 000-0000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Airbnb Listing Link</label>
+                  <input
+                    name="airbnbLink"
+                    type="url"
+                    className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all"
+                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
+                    placeholder="https://www.airbnb.com/rooms/..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Notes to prepare for the call</label>
+                  <textarea
+                    name="notes"
+                    rows={3}
+                    className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all resize-none"
+                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
+                    placeholder="Anything you'd like us to know before the call..."
                   />
                 </div>
                 <button
