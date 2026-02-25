@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 interface AvailableUser {
   id: string;
@@ -44,12 +44,25 @@ function BookingWidget() {
   const [booking, setBooking] = useState<BookingResult['booking'] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const dates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i + 1);
-    return d;
+  const [viewMonth, setViewMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
   });
+
+  // Build set of available dates (next 14 days, weekdays only)
+  const availableDates = useMemo(() => {
+    const dates = new Set<string>();
+    const today = new Date();
+    for (let i = 1; i <= 14; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) { // skip weekends
+        dates.add(d.toISOString().split('T')[0]);
+      }
+    }
+    return dates;
+  }, []);
 
   const fetchSlots = async (date: string) => {
     setLoading(true);
@@ -65,8 +78,7 @@ function BookingWidget() {
     setLoading(false);
   };
 
-  const handleDateSelect = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+  const handleDateSelect = (dateStr: string) => {
     setSelectedDate(dateStr);
     setSelectedSlot(null);
     setSelectedUser(null);
@@ -127,6 +139,16 @@ function BookingWidget() {
     setSubmitting(false);
   };
 
+  const navigateMonth = (dir: -1 | 1) => {
+    setViewMonth((prev) => {
+      let m = prev.month + dir;
+      let y = prev.year;
+      if (m < 0) { m = 11; y--; }
+      if (m > 11) { m = 0; y++; }
+      return { year: y, month: m };
+    });
+  };
+
   return (
     <div className="w-full max-w-lg">
       {/* Card */}
@@ -134,7 +156,7 @@ function BookingWidget() {
         {/* Header */}
         <div className="px-6 py-6" style={{ backgroundColor: '#13352F' }}>
           <div className="flex items-center gap-3 mb-4">
-            <h1 className="text-2xl font-semibold text-white" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            <h1 className="text-2xl font-normal text-white" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
               rf.
             </h1>
             <span
@@ -170,34 +192,17 @@ function BookingWidget() {
             </div>
           )}
 
-          {/* Step: Select Date */}
+          {/* Step: Select Date — Calendar Grid */}
           {step === 'date' && (
             <div>
-              <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#9CA3AF' }}>Select a date</h2>
-              <div className="space-y-2">
-                {dates.map((d) => (
-                  <button
-                    key={d.toISOString()}
-                    onClick={() => handleDateSelect(d)}
-                    className="w-full text-left px-4 py-3 rounded-lg transition-all flex justify-between items-center group"
-                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.backgroundColor = '#f9f8f6'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.backgroundColor = 'white'; }}
-                  >
-                    <div>
-                      <span className="font-medium text-sm" style={{ color: '#181915' }}>
-                        {d.toLocaleDateString('en-US', { weekday: 'long' })}
-                      </span>
-                      <span className="text-sm ml-2" style={{ color: '#9CA3AF' }}>
-                        {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                    <svg className="w-4 h-4 transition-colors" style={{ color: '#C4BFB6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                ))}
-              </div>
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-4" style={{ color: '#9CA3AF' }}>Select a date</h2>
+              <CalendarGrid
+                viewMonth={viewMonth}
+                availableDates={availableDates}
+                selectedDate={selectedDate}
+                onSelect={handleDateSelect}
+                onNavigate={navigateMonth}
+              />
             </div>
           )}
 
@@ -432,8 +437,152 @@ function BookingWidget() {
 
       {/* Footer */}
       <p className="text-center text-xs mt-4" style={{ color: '#8C857B' }}>
-        Powered by <span style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}>rf.</span>
+        Powered by <span style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 400 }}>rf.</span>
       </p>
+    </div>
+  );
+}
+
+/* ─── Calendar Grid Component ─── */
+
+function CalendarGrid({
+  viewMonth,
+  availableDates,
+  selectedDate,
+  onSelect,
+  onNavigate,
+}: {
+  viewMonth: { year: number; month: number };
+  availableDates: Set<string>;
+  selectedDate: string | null;
+  onSelect: (dateStr: string) => void;
+  onNavigate: (dir: -1 | 1) => void;
+}) {
+  const { year, month } = viewMonth;
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const monthName = new Date(year, month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  // First day of month (0=Sun) and total days
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Can we go back? Only if prev month has available dates
+  const now = new Date();
+  const canGoBack = year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth());
+
+  // Build grid cells
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null); // leading blanks
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <div>
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={() => onNavigate(-1)}
+          disabled={!canGoBack}
+          className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+          style={{ color: canGoBack ? '#13352F' : '#D1D5DB' }}
+          onMouseEnter={(e) => { if (canGoBack) e.currentTarget.style.backgroundColor = '#EBEAE6'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <span className="text-sm font-semibold" style={{ color: '#181915' }}>{monthName}</span>
+        <button
+          onClick={() => onNavigate(1)}
+          className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+          style={{ color: '#13352F' }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#EBEAE6'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+          <div key={d} className="text-center text-[10px] font-semibold uppercase tracking-wider py-1" style={{ color: '#9CA3AF' }}>
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div className="grid grid-cols-7 gap-y-1">
+        {cells.map((day, i) => {
+          if (day === null) {
+            return <div key={`blank-${i}`} />;
+          }
+
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isAvailable = availableDates.has(dateStr);
+          const isSelected = dateStr === selectedDate;
+          const isToday = dateStr === todayStr;
+          const isPast = dateStr <= todayStr;
+
+          return (
+            <div key={dateStr} className="flex items-center justify-center py-0.5">
+              {isAvailable ? (
+                <button
+                  onClick={() => onSelect(dateStr)}
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all"
+                  style={{
+                    backgroundColor: isSelected ? '#13352F' : '#e8f0ec',
+                    color: isSelected ? 'white' : '#13352F',
+                    border: isSelected ? '2px solid #13352F' : '2px solid transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = '#c9ddd1';
+                      e.currentTarget.style.border = '2px solid #13352F';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.backgroundColor = '#e8f0ec';
+                      e.currentTarget.style.border = '2px solid transparent';
+                    }
+                  }}
+                >
+                  {day}
+                </button>
+              ) : (
+                <span
+                  className="w-10 h-10 flex items-center justify-center text-sm rounded-full"
+                  style={{
+                    color: isPast ? '#D1D5DB' : '#9CA3AF',
+                    fontWeight: isToday ? 600 : 400,
+                    border: isToday ? '2px solid #D1D5DB' : '2px solid transparent',
+                  }}
+                >
+                  {day}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-4 pt-3" style={{ borderTop: '1px solid #E5E4E0' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#e8f0ec' }} />
+          <span className="text-[10px]" style={{ color: '#9CA3AF' }}>Available</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#13352F' }} />
+          <span className="text-[10px]" style={{ color: '#9CA3AF' }}>Selected</span>
+        </div>
+      </div>
     </div>
   );
 }
