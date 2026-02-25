@@ -29,30 +29,33 @@ export async function getBusyTimes(
   timezone: string
 ): Promise<BusySlot[]> {
   const accessToken = await getGoogleAccessToken(userId);
-  if (!accessToken) return [];
+  if (!accessToken) {
+    console.warn(`No access token for user ${userId} — skipping freebusy check`);
+    return [];
+  }
 
   const calendar = getCalendarClient(accessToken);
 
-  const startOfDay = `${date}T00:00:00`;
-  const endOfDay = `${date}T23:59:59`;
-
+  // Use timezone-aware date construction to avoid UTC offset issues on Vercel
+  // The Google Calendar API freebusy endpoint accepts ISO strings and a timeZone param
   try {
     const response = await calendar.freebusy.query({
       requestBody: {
-        timeMin: new Date(`${startOfDay}`).toISOString(),
-        timeMax: new Date(`${endOfDay}`).toISOString(),
+        timeMin: `${date}T00:00:00`,
+        timeMax: `${date}T23:59:59`,
         timeZone: timezone,
         items: [{ id: 'primary' }],
       },
     });
 
     const busySlots = response.data.calendars?.primary?.busy || [];
+    console.log(`Freebusy for user ${userId} on ${date}: ${busySlots.length} busy slots`);
     return busySlots.map((slot) => ({
       start: slot.start || '',
       end: slot.end || '',
     }));
-  } catch (error) {
-    console.error('Error fetching busy times:', error);
+  } catch (error: any) {
+    console.error(`Error fetching busy times for user ${userId}:`, error?.message || error);
     return [];
   }
 }
@@ -68,6 +71,7 @@ export async function createCalendarEvent(
     startTime: string; // ISO string
     endTime: string;   // ISO string
     attendeeEmail: string;
+    hostEmail: string;
     timezone: string;
   }
 ): Promise<CalendarEvent | null> {
@@ -80,6 +84,7 @@ export async function createCalendarEvent(
     const response = await calendar.events.insert({
       calendarId: 'primary',
       conferenceDataVersion: 1,
+      sendUpdates: 'all', // Send email notifications to all attendees
       requestBody: {
         summary: params.summary,
         description: params.description,
@@ -91,7 +96,10 @@ export async function createCalendarEvent(
           dateTime: params.endTime,
           timeZone: params.timezone,
         },
-        attendees: [{ email: params.attendeeEmail }],
+        attendees: [
+          { email: params.attendeeEmail },            // visitor gets invite
+          { email: params.hostEmail, organizer: true }, // host gets notification
+        ],
         conferenceData: {
           createRequest: {
             requestId: `revfactor-${Date.now()}`,
@@ -105,6 +113,8 @@ export async function createCalendarEvent(
             { method: 'popup', minutes: 5 },
           ],
         },
+        guestsCanModify: false,
+        guestsCanSeeOtherGuests: false,
       },
     });
 

@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       startTime: startDateTime,
       endTime: endDateTime,
       attendeeEmail: visitorEmail,
+      hostEmail: user.email || '',
       timezone,
     });
   } catch (e) {
