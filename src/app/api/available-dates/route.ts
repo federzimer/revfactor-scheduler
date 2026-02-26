@@ -5,7 +5,7 @@ import { generateTimeSlots, isSlotBusy } from '@/lib/utils';
 
 // GET /api/available-dates?from=2025-03-01&to=2025-03-31
 // Returns dates that have at least one admin with actual availability
-// (checks weekly schedule, date overrides, maxAdvanceDays, AND Google Calendar freebusy)
+// (checks weekly schedule, date overrides, maxAdvanceDays, buffer time, AND Google Calendar freebusy)
 export async function GET(req: NextRequest) {
   const from = req.nextUrl.searchParams.get('from');
   const to = req.nextUrl.searchParams.get('to');
@@ -14,7 +14,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'from and to parameters required' }, { status: 400 });
   }
 
-  const timezone = process.env.NEXT_PUBLIC_TIMEZONE || 'America/New_York';
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
   const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
 
@@ -27,11 +26,12 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  // Fetch busy times for the entire range in ONE API call per user
+  // Fetch busy times for the entire range in ONE API call per user (using per-user timezone)
   const userBusyMap: Record<string, Record<string, { start: string; end: string }[]>> = {};
   for (const user of adminUsers) {
+    const userTimezone = (user as any).timezone || 'America/New_York';
     try {
-      userBusyMap[user.id] = await getBusyTimesRange(user.id, from, to, timezone);
+      userBusyMap[user.id] = await getBusyTimesRange(user.id, from, to, userTimezone);
     } catch (e) {
       console.error(`Error fetching busy range for ${user.email}:`, e);
       userBusyMap[user.id] = {};
@@ -55,8 +55,11 @@ export async function GET(req: NextRequest) {
     let dateHasAvailability = false;
 
     for (const user of adminUsers) {
+      const userTimezone = (user as any).timezone || 'America/New_York';
+      const minBufferHours = (user as any).minBufferHours ?? 2;
+      const maxDays = (user as any).maxAdvanceDays ?? 30;
+
       // Check maxAdvanceDays — skip if date is too far in the future for this user
-      const maxDays = (user as any).maxAdvanceDays ?? 60;
       const daysFromNow = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       if (daysFromNow > maxDays) continue;
 
@@ -89,10 +92,19 @@ export async function GET(req: NextRequest) {
       // Get this user's busy times for this specific date from the pre-fetched map
       const busyTimes = userBusyMap[user.id]?.[dateStr] || [];
 
-      // Check if at least one slot is NOT busy
-      const hasOpenSlot = timeSlots.some(
-        (slot) => !isSlotBusy(slot.start, slot.end, dateStr, busyTimes, timezone)
-      );
+      // Calculate buffer cutoff
+      const now = new Date();
+      const bufferCutoff = new Date(now.getTime() + minBufferHours * 60 * 60 * 1000);
+
+      // Check if at least one slot is NOT busy and passes buffer check
+      const hasOpenSlot = timeSlots.some((slot) => {
+        // Buffer check
+        if (minBufferHours > 0) {
+          const slotStartUTC = localToUTC(`${dateStr}T${slot.start}:00`, userTimezone);
+          if (slotStartUTC < bufferCutoff) return false;
+        }
+        return !isSlotBusy(slot.start, slot.end, dateStr, busyTimes, userTimezone);
+      });
 
       if (hasOpenSlot) {
         dateHasAvailability = true;
@@ -106,4 +118,17 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({ availableDates });
+}
+
+/**
+ * Convert a local datetime string in a given timezone to UTC Date.
+ */
+function localToUTC(localDateTimeStr: string, timezone: string): Date {
+  const localDate = new Date(localDateTimeStr);
+  const utcStr = localDate.toLocaleString('en-US', { timeZone: 'UTC' });
+  const tzStr = localDate.toLocaleString('en-US', { timeZone: timezone });
+  const utcDate = new Date(utcStr);
+  const tzDate = new Date(tzStr);
+  const offsetMs = utcDate.getTime() - tzDate.getTime();
+  return new Date(localDate.getTime() + offsetMs);
 }

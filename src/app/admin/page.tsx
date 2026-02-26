@@ -51,7 +51,9 @@ export default function AdminPage() {
   const [savingOverride, setSavingOverride] = useState(false);
 
   // Settings
-  const [maxAdvanceDays, setMaxAdvanceDays] = useState(60);
+  const [maxAdvanceDays, setMaxAdvanceDays] = useState(30);
+  const [timezone, setTimezone] = useState('America/New_York');
+  const [minBufferHours, setMinBufferHours] = useState(2);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savedSettings, setSavedSettings] = useState(false);
 
@@ -84,7 +86,11 @@ export default function AdminPage() {
 
       fetch('/api/admin-settings')
         .then((r) => r.json())
-        .then((data) => setMaxAdvanceDays(data.maxAdvanceDays ?? 60))
+        .then((data) => {
+          setMaxAdvanceDays(data.maxAdvanceDays ?? 30);
+          setTimezone(data.timezone ?? 'America/New_York');
+          setMinBufferHours(data.minBufferHours ?? 2);
+        })
         .catch(() => {});
     }
   }, [status]);
@@ -267,7 +273,7 @@ export default function AdminPage() {
     await fetch('/api/admin-settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maxAdvanceDays }),
+      body: JSON.stringify({ maxAdvanceDays, timezone, minBufferHours }),
     });
     setSavingSettings(false);
     setSavedSettings(true);
@@ -336,40 +342,86 @@ export default function AdminPage() {
         <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
           <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Settings</h2>
           <h3 className="text-xl font-semibold mb-1" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
-            Booking <span style={{ fontStyle: 'italic', color: '#13352F' }}>Limits</span>
+            Booking <span style={{ fontStyle: 'italic', color: '#13352F' }}>Settings</span>
           </h3>
           <p className="text-sm mb-5" style={{ color: '#6B7280' }}>
-            Control how far in advance visitors can book a call with you.
+            Configure your timezone, advance booking limits, and minimum buffer time.
           </p>
 
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium" style={{ color: '#181915' }}>Allow bookings up to</label>
-            <select
-              value={maxAdvanceDays}
-              onChange={(e) => { setMaxAdvanceDays(parseInt(e.target.value)); setSavedSettings(false); }}
-              className="text-sm rounded-md px-3 py-1.5"
-              style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
-            >
-              <option value={7}>1 week</option>
-              <option value={14}>2 weeks</option>
-              <option value={30}>1 month</option>
-              <option value={60}>2 months</option>
-              <option value={90}>3 months</option>
-              <option value={180}>6 months</option>
-              <option value={365}>1 year</option>
-            </select>
-            <label className="text-sm" style={{ color: '#6B7280' }}>in advance</label>
-            <button
-              onClick={handleSaveSettings}
-              disabled={savingSettings}
-              className="text-white px-4 py-1.5 rounded-md text-sm font-medium disabled:opacity-50 transition-all ml-2"
-              style={{ backgroundColor: '#13352F' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a453d'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#13352F'}
-            >
-              {savingSettings ? 'Saving...' : 'Save'}
-            </button>
-            {savedSettings && <span className="text-sm" style={{ color: '#13352F' }}>Saved!</span>}
+          <div className="space-y-4">
+            {/* Timezone */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium w-40" style={{ color: '#181915' }}>Your timezone</label>
+              <select
+                value={timezone}
+                onChange={(e) => { setTimezone(e.target.value); setSavedSettings(false); }}
+                className="text-sm rounded-md px-3 py-1.5"
+                style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+              >
+                <option value="America/New_York">Eastern (ET)</option>
+                <option value="America/Chicago">Central (CT)</option>
+                <option value="America/Denver">Mountain (MT)</option>
+                <option value="America/Los_Angeles">Pacific (PT)</option>
+                <option value="America/Phoenix">Arizona (no DST)</option>
+                <option value="America/Anchorage">Alaska (AKT)</option>
+                <option value="Pacific/Honolulu">Hawaii (HT)</option>
+                <option value="America/Puerto_Rico">Atlantic (AST)</option>
+              </select>
+            </div>
+
+            {/* Max advance days */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium w-40" style={{ color: '#181915' }}>Allow bookings up to</label>
+              <select
+                value={maxAdvanceDays}
+                onChange={(e) => { setMaxAdvanceDays(parseInt(e.target.value)); setSavedSettings(false); }}
+                className="text-sm rounded-md px-3 py-1.5"
+                style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+              >
+                <option value={7}>1 week</option>
+                <option value={14}>2 weeks</option>
+                <option value={30}>1 month</option>
+                <option value={60}>2 months</option>
+                <option value={90}>3 months</option>
+                <option value={180}>6 months</option>
+                <option value={365}>1 year</option>
+              </select>
+              <label className="text-sm" style={{ color: '#6B7280' }}>in advance</label>
+            </div>
+
+            {/* Minimum buffer */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium w-40" style={{ color: '#181915' }}>Minimum buffer</label>
+              <select
+                value={minBufferHours}
+                onChange={(e) => { setMinBufferHours(parseInt(e.target.value)); setSavedSettings(false); }}
+                className="text-sm rounded-md px-3 py-1.5"
+                style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+              >
+                <option value={0}>No buffer</option>
+                <option value={1}>1 hour</option>
+                <option value={2}>2 hours</option>
+                <option value={4}>4 hours</option>
+                <option value={8}>8 hours</option>
+                <option value={24}>24 hours</option>
+                <option value={48}>48 hours</option>
+              </select>
+              <label className="text-sm" style={{ color: '#6B7280' }}>before a slot can be booked</label>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                onClick={handleSaveSettings}
+                disabled={savingSettings}
+                className="text-white px-4 py-1.5 rounded-md text-sm font-medium disabled:opacity-50 transition-all"
+                style={{ backgroundColor: '#13352F' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1a453d'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#13352F'}
+              >
+                {savingSettings ? 'Saving...' : 'Save Settings'}
+              </button>
+              {savedSettings && <span className="text-sm" style={{ color: '#13352F' }}>Saved!</span>}
+            </div>
           </div>
         </div>
 

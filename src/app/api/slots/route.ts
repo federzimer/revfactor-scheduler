@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Date parameter required' }, { status: 400 });
   }
 
-  const timezone = process.env.NEXT_PUBLIC_TIMEZONE || 'America/New_York';
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
 
   // Get the day of week for the requested date
@@ -46,8 +45,12 @@ export async function GET(req: NextRequest) {
   const slotMap: Record<string, { id: string; name: string; image?: string }[]> = {};
 
   for (const user of adminUsers) {
+    // Per-user timezone and settings
+    const userTimezone = (user as any).timezone || 'America/New_York';
+    const minBufferHours = (user as any).minBufferHours ?? 2;
+    const maxDays = (user as any).maxAdvanceDays ?? 30;
+
     // Check maxAdvanceDays
-    const maxDays = (user as any).maxAdvanceDays ?? 60;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const requestedDate = new Date(date + 'T12:00:00');
@@ -77,10 +80,10 @@ export async function GET(req: NextRequest) {
       generateTimeSlots(range.startTime, range.endTime, duration)
     );
 
-    // Get Google Calendar busy times
+    // Get Google Calendar busy times using per-user timezone
     let busyTimes: { start: string; end: string }[] = [];
     try {
-      busyTimes = await getBusyTimes(user.id, date, timezone);
+      busyTimes = await getBusyTimes(user.id, date, userTimezone);
     } catch (e) {
       console.error(`Error getting busy times for ${user.email}:`, e);
     }
@@ -88,9 +91,24 @@ export async function GET(req: NextRequest) {
     // Resolve profile photo with fallback
     const userImage = user.image || PHOTO_FALLBACK[user.email?.toLowerCase() || ''] || undefined;
 
+    // Calculate the buffer cutoff time: current time + minBufferHours
+    const now = new Date();
+    const bufferCutoff = new Date(now.getTime() + minBufferHours * 60 * 60 * 1000);
+
     for (const slot of timeSlots) {
+      // Check buffer time: is this slot starting too soon?
+      if (minBufferHours > 0) {
+        // Build a Date for the slot start in the user's timezone
+        const slotStartDateTime = new Date(`${date}T${slot.start}:00`);
+        // Use Intl to get the actual UTC time for this local slot
+        const slotStartStr = `${date}T${slot.start}:00`;
+        // Create date interpreting slot time in user's timezone
+        const slotStartUTC = localToUTC(slotStartStr, userTimezone);
+        if (slotStartUTC < bufferCutoff) continue;
+      }
+
       // Check if slot conflicts with Google Calendar
-      const isBusy = isSlotBusy(slot.start, slot.end, date, busyTimes, timezone);
+      const isBusy = isSlotBusy(slot.start, slot.end, date, busyTimes, userTimezone);
       if (isBusy) continue;
 
       // Check if slot is already booked
@@ -117,5 +135,21 @@ export async function GET(req: NextRequest) {
     })
     .sort((a, b) => a.start.localeCompare(b.start));
 
-  return NextResponse.json({ date, slots, timezone });
+  return NextResponse.json({ date, slots });
+}
+
+/**
+ * Convert a local datetime string (e.g. "2026-03-03T09:00:00") in a given timezone to UTC Date.
+ */
+function localToUTC(localDateTimeStr: string, timezone: string): Date {
+  // Parse the local datetime
+  const localDate = new Date(localDateTimeStr);
+  // Get the UTC representation by using Intl
+  const utcStr = localDate.toLocaleString('en-US', { timeZone: 'UTC' });
+  const tzStr = localDate.toLocaleString('en-US', { timeZone: timezone });
+  const utcDate = new Date(utcStr);
+  const tzDate = new Date(tzStr);
+  const offsetMs = utcDate.getTime() - tzDate.getTime();
+  // The actual UTC time = localDate + offset
+  return new Date(localDate.getTime() + offsetMs);
 }

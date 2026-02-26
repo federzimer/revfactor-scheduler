@@ -58,7 +58,7 @@ function BookingWidget() {
       const today = new Date();
       const from = today.toISOString().split('T')[0];
       const toDate = new Date(today);
-      toDate.setDate(toDate.getDate() + 60); // look ahead 60 days
+      toDate.setDate(toDate.getDate() + 90); // look ahead up to 90 days (actual limit enforced per-user)
       const to = toDate.toISOString().split('T')[0];
 
       try {

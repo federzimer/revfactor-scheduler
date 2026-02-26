@@ -10,7 +10,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  const timezone = process.env.NEXT_PUBLIC_TIMEZONE || 'America/New_York';
   const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME || 'RevFactor';
 
   // Verify the user exists
@@ -37,6 +36,9 @@ export async function POST(req: NextRequest) {
   if (visitorNotes) descriptionParts.push(`\nNotes to prepare:\n${visitorNotes}`);
   descriptionParts.push(`\nBooked via ${companyName} Scheduler`);
 
+  // Use the host's per-user timezone
+  const hostTimezone = (user as any).timezone || 'America/New_York';
+
   // Create Google Calendar event with Meet link
   const startDateTime = `${date}T${startTime}:00`;
   const endDateTime = `${date}T${endTime}:00`;
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
       endTime: endDateTime,
       attendeeEmail: visitorEmail,
       hostEmail: user.email || '',
-      timezone,
+      timezone: hostTimezone,
     });
   } catch (e) {
     console.error('Error creating calendar event:', e);
