@@ -8,18 +8,15 @@ const PHOTO_FALLBACK: Record<string, string> = {
   'emily@blackbirdhm.com': '/emily.png',
 };
 
-export interface AvailableSlot {
-  start: string;
-  end: string;
-  availableUsers: { id: string; name: string; image?: string }[];
-}
-
-// GET /api/slots?date=2025-03-15
+// GET /api/slots?date=2025-03-15&tz=America/Los_Angeles
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date');
   if (!date) {
     return NextResponse.json({ error: 'Date parameter required' }, { status: 400 });
   }
+
+  // Visitor's timezone (detected by frontend, defaults to ET)
+  const visitorTz = req.nextUrl.searchParams.get('tz') || 'America/New_York';
 
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
 
@@ -41,8 +38,16 @@ export async function GET(req: NextRequest) {
     where: { date, status: 'confirmed' },
   });
 
-  // For each user, generate their available slots
-  const slotMap: Record<string, { id: string; name: string; image?: string }[]> = {};
+  // For each user, generate their available slots and convert to visitor's timezone
+  // Key = display time in visitor TZ, value = list of available users with their host-tz times
+  const slotMap: Record<string, {
+    id: string;
+    name: string;
+    image?: string;
+    hostStart: string;
+    hostEnd: string;
+    hostTimezone: string;
+  }[]> = {};
 
   for (const user of adminUsers) {
     // Per-user timezone and settings
@@ -58,24 +63,23 @@ export async function GET(req: NextRequest) {
     if (daysFromNow > maxDays) continue;
 
     // Check for date-specific override
-    const override = user.dateOverrides[0]; // at most one per user per date
+    const override = user.dateOverrides[0];
 
     let timeRanges: { startTime: string; endTime: string }[] = [];
 
     if (override) {
-      if (override.isBlocked) continue; // user blocked this date entirely
+      if (override.isBlocked) continue;
       if (override.startTime && override.endTime) {
         timeRanges = [{ startTime: override.startTime, endTime: override.endTime }];
       } else {
-        continue; // blocked with no custom hours
+        continue;
       }
     } else {
-      // Use weekly availability
       if (user.availability.length === 0) continue;
       timeRanges = user.availability.map((a) => ({ startTime: a.startTime, endTime: a.endTime }));
     }
 
-    // Combine slots from all time ranges
+    // Combine slots from all time ranges (in host's timezone)
     const timeSlots = timeRanges.flatMap((range) =>
       generateTimeSlots(range.startTime, range.endTime, duration)
     );
@@ -88,68 +92,99 @@ export async function GET(req: NextRequest) {
       console.error(`Error getting busy times for ${user.email}:`, e);
     }
 
-    // Resolve profile photo with fallback
     const userImage = user.image || PHOTO_FALLBACK[user.email?.toLowerCase() || ''] || undefined;
 
-    // Calculate the buffer cutoff time: current time + minBufferHours
+    // Buffer cutoff
     const now = new Date();
     const bufferCutoff = new Date(now.getTime() + minBufferHours * 60 * 60 * 1000);
 
     for (const slot of timeSlots) {
-      // Check buffer time: is this slot starting too soon?
+      // Buffer time check
       if (minBufferHours > 0) {
-        // Build a Date for the slot start in the user's timezone
-        const slotStartDateTime = new Date(`${date}T${slot.start}:00`);
-        // Use Intl to get the actual UTC time for this local slot
-        const slotStartStr = `${date}T${slot.start}:00`;
-        // Create date interpreting slot time in user's timezone
-        const slotStartUTC = localToUTC(slotStartStr, userTimezone);
+        const slotStartUTC = localToUTC(`${date}T${slot.start}:00`, userTimezone);
         if (slotStartUTC < bufferCutoff) continue;
       }
 
-      // Check if slot conflicts with Google Calendar
+      // Google Calendar busy check
       const isBusy = isSlotBusy(slot.start, slot.end, date, busyTimes, userTimezone);
       if (isBusy) continue;
 
-      // Check if slot is already booked
+      // Already booked check
       const isBooked = existingBookings.some(
         (b) => b.userId === user.id && b.startTime === slot.start
       );
       if (isBooked) continue;
 
-      const key = `${slot.start}-${slot.end}`;
+      // Convert host-timezone slot to visitor timezone for display/grouping
+      const displayStart = convertTime(slot.start, date, userTimezone, visitorTz);
+      const displayEnd = convertTime(slot.end, date, userTimezone, visitorTz);
+
+      const key = `${displayStart}-${displayEnd}`;
       if (!slotMap[key]) slotMap[key] = [];
       slotMap[key].push({
         id: user.id,
         name: user.name || user.email || 'Team Member',
         image: userImage,
+        hostStart: slot.start,
+        hostEnd: slot.end,
+        hostTimezone: userTimezone,
       });
     }
   }
 
   // Convert to sorted array
-  const slots: AvailableSlot[] = Object.entries(slotMap)
+  const slots = Object.entries(slotMap)
     .map(([key, users]) => {
       const [start, end] = key.split('-');
       return { start, end, availableUsers: users };
     })
     .sort((a, b) => a.start.localeCompare(b.start));
 
-  return NextResponse.json({ date, slots });
+  return NextResponse.json({ date, slots, displayTimezone: visitorTz });
 }
 
 /**
- * Convert a local datetime string (e.g. "2026-03-03T09:00:00") in a given timezone to UTC Date.
+ * Convert a time string (e.g. "09:00") from one timezone to another on a given date.
+ */
+function convertTime(time: string, date: string, fromTz: string, toTz: string): string {
+  if (fromTz === toTz) return time;
+
+  const refDate = new Date(`${date}T12:00:00Z`);
+  const fromOffset = getTimezoneOffsetMinutes(refDate, fromTz);
+  const toOffset = getTimezoneOffsetMinutes(refDate, toTz);
+  const diffMinutes = toOffset - fromOffset;
+
+  const [h, m] = time.split(':').map(Number);
+  let totalMinutes = h * 60 + m + diffMinutes;
+
+  // Handle day overflow (unlikely for US business hours but just in case)
+  if (totalMinutes < 0) totalMinutes += 24 * 60;
+  if (totalMinutes >= 24 * 60) totalMinutes -= 24 * 60;
+
+  const newH = Math.floor(totalMinutes / 60);
+  const newM = totalMinutes % 60;
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+}
+
+/**
+ * Get the UTC offset in minutes for a timezone on a given date.
+ * E.g., America/New_York in winter = -300 (UTC-5), America/Denver = -420 (UTC-7)
+ */
+function getTimezoneOffsetMinutes(date: Date, tz: string): number {
+  const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
+  const tzStr = date.toLocaleString('en-US', { timeZone: tz });
+  return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000;
+}
+
+/**
+ * Convert a local datetime string in a given timezone to UTC Date.
  */
 function localToUTC(localDateTimeStr: string, timezone: string): Date {
-  // Parse the local datetime
   const localDate = new Date(localDateTimeStr);
-  // Get the UTC representation by using Intl
   const utcStr = localDate.toLocaleString('en-US', { timeZone: 'UTC' });
   const tzStr = localDate.toLocaleString('en-US', { timeZone: timezone });
   const utcDate = new Date(utcStr);
   const tzDate = new Date(tzStr);
   const offsetMs = utcDate.getTime() - tzDate.getTime();
-  // The actual UTC time = localDate + offset
   return new Date(localDate.getTime() + offsetMs);
 }

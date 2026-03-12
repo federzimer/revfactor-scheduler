@@ -6,6 +6,9 @@ interface AvailableUser {
   id: string;
   name: string;
   image?: string;
+  hostStart: string;
+  hostEnd: string;
+  hostTimezone: string;
 }
 
 interface Slot {
@@ -46,6 +49,7 @@ function BookingWidget() {
   const [error, setError] = useState<string | null>(null);
   const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
   const [loadingDates, setLoadingDates] = useState(true);
+  const [displayTimezone, setDisplayTimezone] = useState<string>('');
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -73,13 +77,19 @@ function BookingWidget() {
     fetchAvailableDates();
   }, []);
 
+  // Detect visitor timezone
+  const visitorTz = typeof window !== 'undefined'
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : 'America/New_York';
+
   const fetchSlots = async (date: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/slots?date=${date}`);
+      const res = await fetch(`/api/slots?date=${date}&tz=${encodeURIComponent(visitorTz)}`);
       const data = await res.json();
       setSlots(data.slots || []);
+      if (data.displayTimezone) setDisplayTimezone(data.displayTimezone);
     } catch {
       setError('Failed to load available times. Please try again.');
       setSlots([]);
@@ -119,14 +129,18 @@ function BookingWidget() {
 
     const formData = new FormData(e.currentTarget);
 
+    // Use the host-timezone times for booking (not the display times)
+    const hostStart = selectedUser.hostStart || selectedSlot.start;
+    const hostEnd = selectedUser.hostEnd || selectedSlot.end;
+
     try {
       const res = await fetch('/api/book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: selectedDate,
-          startTime: selectedSlot.start,
-          endTime: selectedSlot.end,
+          startTime: hostStart,
+          endTime: hostEnd,
           userId: selectedUser.id,
           visitorName: formData.get('name'),
           visitorEmail: formData.get('email'),
@@ -241,7 +255,14 @@ function BookingWidget() {
               <h2 className="text-base font-semibold mb-0.5" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
                 {selectedDate && new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </h2>
-              <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>Choose an available time slot</p>
+              <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>
+                Choose an available time slot
+                {displayTimezone && (
+                  <span className="ml-1">
+                    · Times shown in {formatTimezoneName(displayTimezone)}
+                  </span>
+                )}
+              </p>
 
               {loading ? (
                 <div className="flex justify-center py-8">
@@ -616,4 +637,21 @@ function formatTimeDisplay(time: string): string {
   const period = h >= 12 ? 'PM' : 'AM';
   const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return `${displayH}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function formatTimezoneName(tz: string): string {
+  const names: Record<string, string> = {
+    'America/New_York': 'Eastern Time',
+    'America/Chicago': 'Central Time',
+    'America/Denver': 'Mountain Time',
+    'America/Los_Angeles': 'Pacific Time',
+    'America/Phoenix': 'Arizona Time',
+    'America/Anchorage': 'Alaska Time',
+    'Pacific/Honolulu': 'Hawaii Time',
+    'America/Puerto_Rico': 'Atlantic Time',
+  };
+  if (names[tz]) return names[tz];
+  // Fallback: extract the city name from IANA timezone
+  const city = tz.split('/').pop()?.replace(/_/g, ' ') || tz;
+  return `${city} Time`;
 }
