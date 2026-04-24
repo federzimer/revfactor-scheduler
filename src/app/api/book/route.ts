@@ -75,6 +75,36 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // Forward booking to the hub as a lead (fire-and-forget).
+  const hubUrl = process.env.HUB_WEBHOOK_URL;
+  const hubSecret = process.env.HUB_WEBHOOK_SECRET;
+  if (hubUrl && hubSecret) {
+    fetch(hubUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${hubSecret}`,
+      },
+      body: JSON.stringify({
+        bookingId: booking.id,
+        visitorName,
+        visitorEmail,
+        visitorPhone: visitorPhone || null,
+        visitorAirbnbLink: visitorAirbnbLink || null,
+        visitorNotes: visitorNotes || null,
+        date,
+        startTime,
+        endTime,
+        timezone: hostTimezone,
+        hostName: user.name,
+        hostEmail: user.email,
+        meetLink: calendarEvent?.meetLink || null,
+      }),
+    }).catch((e) => {
+      console.error('[hub webhook] forward failed:', e);
+    });
+  }
+
   return NextResponse.json({
     booking: {
       id: booking.id,
