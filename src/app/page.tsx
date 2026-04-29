@@ -161,7 +161,7 @@ function BookingWidget() {
 
       if (typeof window !== 'undefined' && typeof (window as any).gtag === 'function') {
         (window as any).gtag('event', 'book_strategy_call', {
-          send_to: ['G-1CTGBJ9RLK', 'AW-18106897053/REPLACE_WITH_CONVERSION_LABEL'],
+          send_to: ['G-1CTGBJ9RLK', 'AW-18106897053/WkHxCOKD46McEJ2lhbpD'],
           value: 1000,
           currency: 'USD',
           transaction_id: data.booking.id,
