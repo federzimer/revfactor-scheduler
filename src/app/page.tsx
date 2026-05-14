@@ -159,6 +159,15 @@ function BookingWidget() {
       setBooking(data.booking);
       setStep('confirmed');
 
+      if (typeof window !== 'undefined' && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'scheduler_booking_confirmed',
+          booked: true,
+          value: 250,
+          currency: 'USD',
+        }, '*');
+      }
+
       if (typeof window !== 'undefined' && typeof (window as any).gtag === 'function') {
         (window as any).gtag('event', 'book_strategy_call', {
           send_to: ['G-1CTGBJ9RLK', 'AW-18106897053/WkHxCOKD46McEJ2lhbpD'],
