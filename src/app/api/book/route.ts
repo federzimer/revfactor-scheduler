@@ -105,6 +105,28 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Forward booking to n8n for the follow-up "next steps" email (fire-and-forget).
+  const followupUrl = process.env.BOOKING_FOLLOWUP_WEBHOOK_URL;
+  if (followupUrl) {
+    fetch(followupUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bookingId: booking.id,
+        visitorName,
+        visitorEmail,
+        date,
+        startTime,
+        endTime,
+        timezone: hostTimezone,
+        hostName: user.name,
+        meetLink: calendarEvent?.meetLink || null,
+      }),
+    }).catch((e) => {
+      console.error('[followup webhook] forward failed:', e);
+    });
+  }
+
   return NextResponse.json({
     booking: {
       id: booking.id,
