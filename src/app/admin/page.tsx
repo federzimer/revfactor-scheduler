@@ -1,8 +1,9 @@
 'use client';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useEffect, useState, useMemo } from 'react';
 import { redirect } from 'next/navigation';
+import AdminHeader from './AdminHeader';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SHORT_DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -303,39 +304,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#E0DAD1' }}>
-      <header style={{ backgroundColor: '#F5F4F2', borderBottom: '1px solid #E5E4E0' }}>
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold" style={{ color: '#13352F', fontFamily: 'Georgia, "Times New Roman", serif' }}>
-              rf.
-            </h1>
-            <span
-              className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-widest"
-              style={{ backgroundColor: '#13352F', color: 'rgba(255,255,255,0.8)' }}
-            >
-              Scheduler
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium" style={{ color: '#181915' }}>{session.user?.name}</p>
-              <p className="text-xs" style={{ color: '#6B7280' }}>{session.user?.email}</p>
-            </div>
-            {session.user?.image && (
-              <img src={session.user.image} alt="" className="w-9 h-9 rounded-full" />
-            )}
-            <button
-              onClick={() => signOut({ callbackUrl: '/admin/login' })}
-              className="text-sm ml-2 transition-colors"
-              style={{ color: '#6B7280' }}
-              onMouseEnter={(e) => e.currentTarget.style.color = '#181915'}
-              onMouseLeave={(e) => e.currentTarget.style.color = '#6B7280'}
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
+      <AdminHeader />
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
         {/* Booking Settings */}

@@ -15,11 +15,10 @@ export async function GET(req: NextRequest) {
   }
 
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
-  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
 
-  // Get all admin users with their weekly availability and date overrides
+  // Get all active team members with their weekly availability and date overrides
   const adminUsers = await prisma.user.findMany({
-    where: { email: { in: adminEmails } },
+    where: { active: true },
     include: {
       availability: true,
       dateOverrides: true,

@@ -23,10 +23,9 @@ export async function GET(req: NextRequest) {
   // Get the day of week for the requested date
   const dayOfWeek = new Date(date + 'T12:00:00').getDay();
 
-  // Find all admin users who have availability for this day
-  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
+  // Find all active team members who have availability for this day
   const adminUsers = await prisma.user.findMany({
-    where: { email: { in: adminEmails } },
+    where: { active: true },
     include: {
       availability: { where: { dayOfWeek } },
       dateOverrides: { where: { date } },

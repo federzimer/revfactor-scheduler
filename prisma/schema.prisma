@@ -43,6 +43,8 @@ model User {
   maxAdvanceDays   Int            @default(30) // how far in advance bookings can be made
   timezone         String         @default("America/New_York") // user's timezone (IANA)
   minBufferHours   Int            @default(2) // minimum hours before a slot can be booked
+  role             String         @default("user") // "super_admin" | "user"
+  active           Boolean        @default(true) // soft enable/disable a teammate
   accounts         Account[]
   sessions         Session[]
   availability     Availability[]
