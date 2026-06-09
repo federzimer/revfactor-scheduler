@@ -176,6 +176,24 @@ export async function getBusyTimesRange(
 }
 
 /**
+ * Delete a Google Calendar event from the host's primary calendar (best-effort).
+ * Used when a booking/lead is deleted so no phantom event lingers on the rep's calendar.
+ */
+export async function deleteCalendarEvent(userId: string, eventId: string): Promise<boolean> {
+  const accessToken = await getGoogleAccessToken(userId);
+  if (!accessToken) return false;
+
+  const calendar = getCalendarClient(accessToken);
+  try {
+    await calendar.events.delete({ calendarId: 'primary', eventId, sendUpdates: 'none' });
+    return true;
+  } catch (error) {
+    console.error('Error deleting calendar event:', error);
+    return false;
+  }
+}
+
+/**
  * Create a Google Calendar event with Google Meet.
  *
  * Privacy: the event is created on the host's (rep's) primary calendar, so the rep
