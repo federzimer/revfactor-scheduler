@@ -50,6 +50,8 @@ function BookingWidget() {
   const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
   const [loadingDates, setLoadingDates] = useState(true);
   const [displayTimezone, setDisplayTimezone] = useState<string>('');
+  const [noListing, setNoListing] = useState(false); // "I don't have a listing yet" → collect address instead
+  const [heardAbout, setHeardAbout] = useState(''); // "How did you hear about us?" selection
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -145,7 +147,10 @@ function BookingWidget() {
           visitorName: formData.get('name'),
           visitorEmail: formData.get('email'),
           visitorPhone: formData.get('phone'),
-          visitorAirbnbLink: formData.get('airbnbLink'),
+          visitorAirbnbLink: noListing ? null : formData.get('airbnbLink'),
+          visitorAddress: noListing ? formData.get('address') : null,
+          visitorHeardAbout: formData.get('heardAbout'),
+          visitorReferralName: heardAbout === 'Referral' ? formData.get('referralName') : null,
           visitorNotes: formData.get('notes'),
         }),
       });
@@ -423,17 +428,79 @@ function BookingWidget() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Airbnb Listing Link</label>
-                  <input
-                    name="airbnbLink"
-                    type="url"
+                  {!noListing ? (
+                    <>
+                      <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Airbnb Listing Link *</label>
+                      <input
+                        name="airbnbLink"
+                        type="url"
+                        required
+                        className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all"
+                        style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
+                        onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
+                        placeholder="https://www.airbnb.com/rooms/..."
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Property Address *</label>
+                      <input
+                        name="address"
+                        type="text"
+                        required
+                        className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all"
+                        style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                        onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
+                        onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
+                        placeholder="123 Main St, City, State, ZIP"
+                      />
+                    </>
+                  )}
+                  <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs" style={{ color: '#4B5563' }}>
+                    <input
+                      type="checkbox"
+                      checked={noListing}
+                      onChange={(e) => setNoListing(e.target.checked)}
+                      style={{ accentColor: '#13352F' }}
+                    />
+                    I don&apos;t have a listing yet
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>How did you hear about us? *</label>
+                  <select
+                    name="heardAbout"
+                    required
+                    value={heardAbout}
+                    onChange={(e) => setHeardAbout(e.target.value)}
                     className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all"
-                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: heardAbout ? '#181915' : '#9CA3AF' }}
                     onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
                     onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
-                    placeholder="https://www.airbnb.com/rooms/..."
-                  />
+                  >
+                    <option value="" disabled>Select one…</option>
+                    <option value="Social Media">Social Media</option>
+                    <option value="Google">Google</option>
+                    <option value="AI search (ChatGPT, Claude, etc.)">AI search (ChatGPT, Claude, etc.)</option>
+                    <option value="Referral">Referral</option>
+                  </select>
                 </div>
+                {heardAbout === 'Referral' && (
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Who referred you? *</label>
+                    <input
+                      name="referralName"
+                      type="text"
+                      required
+                      className="w-full rounded-md px-4 py-2.5 text-sm outline-none transition-all"
+                      style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.boxShadow = '0 0 0 2px rgba(19,53,47,0.1)'; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.boxShadow = 'none'; }}
+                      placeholder="Name of the person who referred you"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Notes to prepare for the call</label>
                   <textarea
