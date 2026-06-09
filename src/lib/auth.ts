@@ -1,8 +1,11 @@
-import { NextAuthOptions } from 'next-auth';
+import { NextAuthOptions, getServerSession } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from './prisma';
+import type { User } from '@prisma/client';
 
+// Bootstrap allowlist — used as a fallback so we can't lock ourselves out while
+// migrating team membership into the database (User.active).
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
 
 export const authOptions: NextAuthOptions = {
@@ -11,6 +14,10 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      // Allow a teammate added via "Add user" (a User row created before they've ever
+      // logged in) to link to their Google account on first sign-in. Safe here: a single
+      // trusted Google provider and sign-in is still gated by the DB allowlist below.
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           scope:
@@ -23,13 +30,17 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user }) {
-      // Only allow admin emails to sign in
       if (!user.email) return false;
-      return ADMIN_EMAILS.includes(user.email.toLowerCase());
+      const email = user.email.toLowerCase();
+      // Allow if an active team member exists in the DB, OR (bootstrap) the email is in ADMIN_EMAILS.
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) return existing.active;
+      return ADMIN_EMAILS.includes(email);
     },
     async session({ session, user }) {
       if (session.user) {
         (session.user as any).id = user.id;
+        (session.user as any).role = (user as any).role || 'user';
       }
       return session;
     },
@@ -40,6 +51,26 @@ export const authOptions: NextAuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
+
+/**
+ * Resolve the full DB User (incl. role) for the current session, or null if not signed in.
+ */
+export async function getSessionUser(): Promise<User | null> {
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email;
+  if (!email) return null;
+  return prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+}
+
+/**
+ * Returns the session User only if they are an active super admin, otherwise null.
+ * Routes use this to gate super-admin-only actions.
+ */
+export async function requireSuperAdmin(): Promise<User | null> {
+  const user = await getSessionUser();
+  if (!user || !user.active || user.role !== 'super_admin') return null;
+  return user;
+}
 
 export async function getGoogleAccessToken(userId: string): Promise<string | null> {
   const account = await prisma.account.findFirst({
