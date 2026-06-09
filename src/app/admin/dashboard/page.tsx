@@ -29,6 +29,7 @@ const OUTCOMES = [
   { value: 'no_show', label: 'No-show', color: '#b91c1c', bg: '#fef2f2' },
   { value: 'won', label: 'Won', color: '#065f46', bg: '#ecfdf5' },
   { value: 'lost', label: 'Lost', color: '#92400e', bg: '#fef3c7' },
+  { value: 'not_a_fit', label: 'Not a fit', color: '#6b21a8', bg: '#f3e8ff' },
 ];
 const outcomeMeta = (v: string) => OUTCOMES.find((o) => o.value === v) || OUTCOMES[0];
 
@@ -71,17 +72,29 @@ export default function DashboardPage() {
     });
   };
 
+  const deleteLead = async (b: Booking) => {
+    if (!confirm(`Delete the lead "${b.visitorName}" (${b.date} ${b.startTime})? This removes the booking and its calendar event. This cannot be undone.`)) return;
+    setBookings((prev) => prev.filter((x) => x.id !== b.id));
+    const res = await fetch(`/api/bookings/${b.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      // restore on failure
+      setBookings((prev) => [...prev, b]);
+      alert('Could not delete that lead. Please try again.');
+    }
+  };
+
   // Per-rep conversion stats
   const reps = useMemo(() => {
-    const map = new Map<string, { name: string; total: number; completed: number; no_show: number; won: number; lost: number }>();
+    const map = new Map<string, { name: string; total: number; completed: number; no_show: number; won: number; lost: number; not_a_fit: number }>();
     for (const b of bookings) {
-      if (!map.has(b.hostId)) map.set(b.hostId, { name: b.hostName, total: 0, completed: 0, no_show: 0, won: 0, lost: 0 });
+      if (!map.has(b.hostId)) map.set(b.hostId, { name: b.hostName, total: 0, completed: 0, no_show: 0, won: 0, lost: 0, not_a_fit: 0 });
       const r = map.get(b.hostId)!;
       r.total += 1;
       if (b.outcome === 'completed') r.completed += 1;
       if (b.outcome === 'no_show') r.no_show += 1;
       if (b.outcome === 'won') r.won += 1;
       if (b.outcome === 'lost') r.lost += 1;
+      if (b.outcome === 'not_a_fit') r.not_a_fit += 1;
     }
     return Array.from(map.entries()).map(([id, r]) => {
       const shows = r.completed + r.won + r.lost; // calls where the lead showed
@@ -133,6 +146,7 @@ export default function DashboardPage() {
                   <span>Won</span><span className="text-right font-medium" style={{ color: '#065f46' }}>{r.won}</span>
                   <span>No-shows</span><span className="text-right font-medium" style={{ color: '#b91c1c' }}>{r.no_show}</span>
                   <span>Lost</span><span className="text-right font-medium" style={{ color: '#92400e' }}>{r.lost}</span>
+                  <span>Not a fit</span><span className="text-right font-medium" style={{ color: '#6b21a8' }}>{r.not_a_fit}</span>
                 </div>
               </div>
             ))}
@@ -179,6 +193,7 @@ export default function DashboardPage() {
                     {['When', 'Rep', 'Lead', 'Property', 'Source', 'Outcome'].map((h) => (
                       <th key={h} className="text-left py-2 px-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#9CA3AF' }}>{h}</th>
                     ))}
+                    {isSuperAdmin && <th className="py-2 px-2"></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -215,6 +230,22 @@ export default function DashboardPage() {
                             {OUTCOMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
                         </td>
+                        {isSuperAdmin && (
+                          <td className="py-2.5 px-2 text-right">
+                            <button
+                              onClick={() => deleteLead(b)}
+                              title="Delete this lead (removes the booking and its calendar event)"
+                              className="transition-colors"
+                              style={{ color: '#C4BFB6' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = '#b91c1c')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '#C4BFB6')}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
