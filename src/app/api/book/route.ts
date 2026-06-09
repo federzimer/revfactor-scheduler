@@ -126,6 +126,36 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Send booking data to n8n (fire-and-forget) so it can send the confirmation email and
+  // schedule reminder emails (e.g. 24h + 1h before) to reduce no-shows. n8n owns the
+  // scheduling and delivery; the app just hands over everything it needs. No-op if unset.
+  const n8nUrl = process.env.N8N_BOOKING_WEBHOOK_URL;
+  if (n8nUrl) {
+    fetch(n8nUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'booking.confirmed',
+        bookingId: booking.id,
+        leadName: visitorName,
+        leadEmail: visitorEmail,
+        leadPhone: visitorPhone || null,
+        date,
+        startTime,
+        endTime,
+        startDateTime, // local wall-clock start, pair with `timezone`
+        timezone: hostTimezone,
+        meetLink: calendarEvent?.meetLink || null,
+        hostName: user.name,
+        property: visitorAirbnbLink || visitorAddress || null,
+        heardAbout: visitorHeardAbout || null,
+        companyName,
+      }),
+    }).catch((e) => {
+      console.error('[n8n webhook] forward failed:', e);
+    });
+  }
+
   return NextResponse.json({
     booking: {
       id: booking.id,
