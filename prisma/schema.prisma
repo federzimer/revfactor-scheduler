@@ -90,6 +90,9 @@ model Booking {
   visitorPhone    String?
   visitorCompany  String?
   visitorAirbnbLink String?
+  visitorAddress  String?  // physical address when visitor has no listing yet
+  visitorHeardAbout String? // "How did you hear about us?" answer
+  visitorReferralName String? // name of referrer when heardAbout = Referral
   visitorNotes    String?
   meetLink        String?
   calendarEventId String?

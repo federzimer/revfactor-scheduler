@@ -4,10 +4,18 @@ import { createCalendarEvent } from '@/lib/google-calendar';
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { date, startTime, endTime, userId, visitorName, visitorEmail, visitorPhone, visitorAirbnbLink, visitorNotes } = body;
+  const { date, startTime, endTime, userId, visitorName, visitorEmail, visitorPhone, visitorAirbnbLink, visitorAddress, visitorHeardAbout, visitorReferralName, visitorNotes } = body;
 
   if (!date || !startTime || !endTime || !userId || !visitorName || !visitorEmail) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  }
+
+  // A lead must identify their property: either an Airbnb listing link or a physical address.
+  if (!visitorAirbnbLink && !visitorAddress) {
+    return NextResponse.json({ error: 'Please provide your Airbnb listing link or property address' }, { status: 400 });
+  }
+  if (!visitorHeardAbout) {
+    return NextResponse.json({ error: 'Please tell us how you heard about us' }, { status: 400 });
   }
 
   const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME || 'RevFactor';
@@ -33,6 +41,13 @@ export async function POST(req: NextRequest) {
   ];
   if (visitorPhone) descriptionParts.push(`Phone: ${visitorPhone}`);
   if (visitorAirbnbLink) descriptionParts.push(`Airbnb Listing: ${visitorAirbnbLink}`);
+  if (visitorAddress) descriptionParts.push(`Property Address: ${visitorAddress}`);
+  if (visitorHeardAbout) {
+    const heard = visitorHeardAbout === 'Referral' && visitorReferralName
+      ? `Referral (${visitorReferralName})`
+      : visitorHeardAbout;
+    descriptionParts.push(`Heard about us via: ${heard}`);
+  }
   if (visitorNotes) descriptionParts.push(`\nNotes to prepare:\n${visitorNotes}`);
   descriptionParts.push(`\nBooked via ${companyName} Scheduler`);
 
@@ -69,6 +84,9 @@ export async function POST(req: NextRequest) {
       visitorEmail,
       visitorPhone: visitorPhone || null,
       visitorAirbnbLink: visitorAirbnbLink || null,
+      visitorAddress: visitorAddress || null,
+      visitorHeardAbout: visitorHeardAbout || null,
+      visitorReferralName: visitorReferralName || null,
       visitorNotes: visitorNotes || null,
       meetLink: calendarEvent?.meetLink || null,
       calendarEventId: calendarEvent?.id || null,
@@ -91,6 +109,9 @@ export async function POST(req: NextRequest) {
         visitorEmail,
         visitorPhone: visitorPhone || null,
         visitorAirbnbLink: visitorAirbnbLink || null,
+        visitorAddress: visitorAddress || null,
+        visitorHeardAbout: visitorHeardAbout || null,
+        visitorReferralName: visitorReferralName || null,
         visitorNotes: visitorNotes || null,
         date,
         startTime,
