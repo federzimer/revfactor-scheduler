@@ -99,6 +99,9 @@ model Booking {
   meetLink        String?
   calendarEventId String?
   status          String   @default("confirmed") // confirmed, cancelled
+  outcome         String   @default("scheduled") // scheduled, completed, no_show, won, lost
+  convertedAt     DateTime? // set when outcome becomes "won"
+  outcomeNote     String?  // optional rep note about the outcome
   createdAt       DateTime @default(now())
   user            User     @relation(fields: [userId], references: [id])
 }
