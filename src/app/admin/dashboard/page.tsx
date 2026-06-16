@@ -12,6 +12,7 @@ interface Booking {
   endTime: string;
   hostId: string;
   hostName: string;
+  hostTimezone: string; // tz the stored startTime/endTime are expressed in
   visitorName: string;
   visitorEmail: string;
   visitorPhone: string | null;
@@ -32,6 +33,43 @@ const OUTCOMES = [
   { value: 'not_a_fit', label: 'Not a fit', color: '#6b21a8', bg: '#f3e8ff' },
 ];
 const outcomeMeta = (v: string) => OUTCOMES.find((o) => o.value === v) || OUTCOMES[0];
+
+// Booking times are stored in the HOST's timezone. The dashboard normalizes everything to
+// Eastern so calls across reps (Central, Mountain, …) are directly comparable.
+const EASTERN_TZ = 'America/New_York';
+
+// Offset (minutes, tz − UTC) of a timezone at a given instant. Intl-based so it's correct
+// regardless of the browser's own timezone (the server's UTC-only trick breaks in the client).
+function tzOffsetMinutes(instant: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const m: Record<string, string> = {};
+  for (const p of dtf.formatToParts(instant)) m[p.type] = p.value;
+  const asUTC = Date.UTC(+m.year, +m.month - 1, +m.day, +m.hour, +m.minute, +m.second);
+  return (asUTC - instant.getTime()) / 60000;
+}
+
+// Convert a wall-clock (date + "HH:MM") expressed in `fromTz` into the true UTC instant.
+function wallClockToInstant(date: string, time: string, fromTz: string): Date {
+  const [Y, Mo, D] = date.split('-').map(Number);
+  const [h, mi] = (time || '00:00').split(':').map(Number);
+  const guess = Date.UTC(Y, Mo - 1, D, h, mi);
+  const offset = tzOffsetMinutes(new Date(guess), fromTz);
+  return new Date(guess - offset * 60000);
+}
+
+// Render a booking's stored host-tz time as Eastern date + time (both, so a late call that
+// crosses midnight into ET shows a consistent date/time pair).
+function formatEastern(date: string, time: string, fromTz: string): { date: string; time: string } {
+  const instant = wallClockToInstant(date, time, fromTz);
+  return {
+    date: instant.toLocaleDateString('en-US', { timeZone: EASTERN_TZ, month: 'short', day: 'numeric' }),
+    time: instant.toLocaleTimeString('en-US', { timeZone: EASTERN_TZ, hour: 'numeric', minute: '2-digit' }),
+  };
+}
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -73,7 +111,8 @@ export default function DashboardPage() {
   };
 
   const deleteLead = async (b: Booking) => {
-    if (!confirm(`Delete the lead "${b.visitorName}" (${b.date} ${b.startTime})? This removes the booking and its calendar event. This cannot be undone.`)) return;
+    const et = formatEastern(b.date, b.startTime, b.hostTimezone);
+    if (!confirm(`Delete the lead "${b.visitorName}" (${et.date} ${et.time} ET)? This removes the booking and its calendar event. This cannot be undone.`)) return;
     setBookings((prev) => prev.filter((x) => x.id !== b.id));
     const res = await fetch(`/api/bookings/${b.id}`, { method: 'DELETE' });
     if (!res.ok) {
@@ -202,8 +241,15 @@ export default function DashboardPage() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid #EBEAE6' }}>
                         <td className="py-2.5 px-2 whitespace-nowrap" style={{ color: '#181915' }}>
-                          {new Date(b.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          <span style={{ color: '#9CA3AF' }}> · {b.startTime}</span>
+                          {(() => {
+                            const et = formatEastern(b.date, b.startTime, b.hostTimezone);
+                            return (
+                              <>
+                                {et.date}
+                                <span style={{ color: '#9CA3AF' }}> · {et.time} ET</span>
+                              </>
+                            );
+                          })()}
                         </td>
                         <td className="py-2.5 px-2 whitespace-nowrap" style={{ color: '#4B5563' }}>{b.hostName}</td>
                         <td className="py-2.5 px-2">

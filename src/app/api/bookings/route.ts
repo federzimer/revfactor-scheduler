@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const bookings = await prisma.booking.findMany({
     where,
     orderBy: [{ date: 'desc' }, { startTime: 'desc' }],
-    include: { user: { select: { id: true, name: true, email: true } } },
+    include: { user: { select: { id: true, name: true, email: true, timezone: true } } },
   });
 
   return NextResponse.json({
@@ -43,6 +43,8 @@ export async function GET(req: NextRequest) {
       endTime: b.endTime,
       hostId: b.userId,
       hostName: b.user?.name || b.user?.email || 'Unknown',
+      hostTimezone: b.user?.timezone || 'America/New_York', // startTime is stored in this tz
+
       visitorName: b.visitorName,
       visitorEmail: b.visitorEmail,
       visitorPhone: b.visitorPhone,
