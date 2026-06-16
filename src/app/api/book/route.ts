@@ -73,6 +73,22 @@ export async function POST(req: NextRequest) {
     console.error('Error creating calendar event:', e);
   }
 
+  // Fail loudly: the Meet link IS the meeting (the lead is not a calendar attendee), so a
+  // booking with no event/link is a broken booking. Rather than silently saving a phantom
+  // "confirmed" booking that lands on nobody's calendar, abort so the visitor can pick
+  // another time/host and the slot stays open. (This is the symptom that hid Ethan's
+  // missing calendar scope: bookings "succeeded" but no event or link was ever created.)
+  if (!calendarEvent || !calendarEvent.meetLink) {
+    console.error(
+      `Booking aborted — could not create calendar event/Meet link for host ${user.email} (${userId}). ` +
+      `Likely the host has not granted Google Calendar access or their token was revoked.`,
+    );
+    return NextResponse.json(
+      { error: "We couldn't finalize this booking. Please choose another time, or contact us if it keeps happening." },
+      { status: 502 },
+    );
+  }
+
   // Save booking in database
   const booking = await prisma.booking.create({
     data: {

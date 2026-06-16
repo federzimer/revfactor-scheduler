@@ -23,9 +23,16 @@ export async function GET(req: NextRequest) {
   // Get the day of week for the requested date
   const dayOfWeek = new Date(date + 'T12:00:00').getDay();
 
-  // Find all active team members who have availability for this day
+  // Find all active team members who have availability for this day.
+  // Only offer hosts who have actually granted Google Calendar access — without the
+  // calendar scope we can't create the event / Meet link, and (because getBusyTimes
+  // fails open) the host would otherwise appear *fully free* and silently swallow
+  // bookings that never land on anyone's calendar.
   const adminUsers = await prisma.user.findMany({
-    where: { active: true },
+    where: {
+      active: true,
+      accounts: { some: { provider: 'google', scope: { contains: 'calendar' } } },
+    },
     include: {
       availability: { where: { dayOfWeek } },
       dateOverrides: { where: { date } },
@@ -87,7 +94,13 @@ export async function GET(req: NextRequest) {
     let busyTimes: { start: string; end: string }[] = [];
     try {
       busyTimes = await getBusyTimes(user.id, date, userTimezone);
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.message === 'NO_CALENDAR_ACCESS') {
+        // Token missing/revoked — don't offer a host we can't book. Fail safe (skip)
+        // rather than fail open (show them as fully free).
+        console.warn(`Skipping host ${user.email}: no calendar access`);
+        continue;
+      }
       console.error(`Error getting busy times for ${user.email}:`, e);
     }
 

@@ -16,24 +16,38 @@ export async function GET(req: NextRequest) {
 
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
 
-  // Get all active team members with their weekly availability and date overrides
-  const adminUsers = await prisma.user.findMany({
-    where: { active: true },
+  // Get all active team members with their weekly availability and date overrides.
+  // Mirror /api/slots: only consider hosts who have granted Google Calendar access, so a
+  // host we can't actually book never makes a date look available.
+  const adminUsers = (await prisma.user.findMany({
+    where: {
+      active: true,
+      accounts: { some: { provider: 'google', scope: { contains: 'calendar' } } },
+    },
     include: {
       availability: true,
       dateOverrides: true,
     },
-  });
+  }));
 
-  // Fetch busy times for the entire range in ONE API call per user (using per-user timezone)
+  // Fetch busy times for the entire range in ONE API call per user (using per-user timezone).
+  // If a host's calendar access is dead, drop them from consideration entirely.
   const userBusyMap: Record<string, Record<string, { start: string; end: string }[]>> = {};
+  const bookableUsers: typeof adminUsers = [];
   for (const user of adminUsers) {
     const userTimezone = (user as any).timezone || 'America/New_York';
     try {
       userBusyMap[user.id] = await getBusyTimesRange(user.id, from, to, userTimezone);
-    } catch (e) {
+      bookableUsers.push(user);
+    } catch (e: any) {
+      if (e?.message === 'NO_CALENDAR_ACCESS') {
+        console.warn(`Skipping host ${user.email}: no calendar access`);
+        continue;
+      }
       console.error(`Error fetching busy range for ${user.email}:`, e);
+      // Transient error — keep the host but treat as having no known busy times.
       userBusyMap[user.id] = {};
+      bookableUsers.push(user);
     }
   }
 
@@ -53,7 +67,7 @@ export async function GET(req: NextRequest) {
     // Check if any admin has availability for this date
     let dateHasAvailability = false;
 
-    for (const user of adminUsers) {
+    for (const user of bookableUsers) {
       const userTimezone = (user as any).timezone || 'America/New_York';
       const minBufferHours = (user as any).minBufferHours ?? 2;
       const maxDays = (user as any).maxAdvanceDays ?? 30;
