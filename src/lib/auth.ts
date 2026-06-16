@@ -29,13 +29,35 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
       if (!user.email) return false;
       const email = user.email.toLowerCase();
       // Allow if an active team member exists in the DB, OR (bootstrap) the email is in ADMIN_EMAILS.
       const existing = await prisma.user.findUnique({ where: { email } });
-      if (existing) return existing.active;
-      return ADMIN_EMAILS.includes(email);
+      const allowed = existing ? existing.active : ADMIN_EMAILS.includes(email);
+      if (!allowed) return false;
+
+      // Persist the freshest OAuth scopes/tokens onto the already-linked Account.
+      // NextAuth's PrismaAdapter only writes these on the FIRST account link, so without
+      // this a re-consent (e.g. a teammate using "Connect Google Calendar" to grant the
+      // calendar scope they declined the first time) would update Google but never the DB —
+      // the reconnect would silently no-op. updateMany matches 0 rows on a first-ever
+      // sign-in (the adapter's linkAccount stores the row then), so this is safe either way.
+      // Prisma ignores `undefined` fields, so we only overwrite what Google actually returned.
+      if (account?.provider === 'google' && account.providerAccountId) {
+        await prisma.account.updateMany({
+          where: { provider: 'google', providerAccountId: account.providerAccountId },
+          data: {
+            access_token: account.access_token,
+            expires_at: typeof account.expires_at === 'number' ? account.expires_at : undefined,
+            scope: account.scope,
+            token_type: account.token_type,
+            id_token: account.id_token,
+            refresh_token: account.refresh_token ?? undefined,
+          },
+        });
+      }
+      return true;
     },
     async session({ session, user }) {
       if (session.user) {

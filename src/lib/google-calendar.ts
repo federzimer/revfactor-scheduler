@@ -63,8 +63,10 @@ export async function getBusyTimes(
 ): Promise<BusySlot[]> {
   const accessToken = await getGoogleAccessToken(userId);
   if (!accessToken) {
-    console.warn(`No access token for user ${userId} — skipping freebusy check`);
-    return [];
+    // No usable token (never connected, or refresh failed/revoked). Signal the caller
+    // to SKIP this host rather than returning an empty busy list — an empty list reads
+    // as "fully free" and would let visitors book a host whose calendar we can't touch.
+    throw new Error('NO_CALENDAR_ACCESS');
   }
 
   const calendar = getCalendarClient(accessToken);
@@ -110,8 +112,9 @@ export async function getBusyTimesRange(
 ): Promise<Record<string, BusySlot[]>> {
   const accessToken = await getGoogleAccessToken(userId);
   if (!accessToken) {
-    console.warn(`No access token for user ${userId} — skipping freebusy range check`);
-    return {};
+    // See getBusyTimes: signal the caller to skip this host instead of reporting
+    // an empty (== fully free) busy map.
+    throw new Error('NO_CALENDAR_ACCESS');
   }
 
   const calendar = getCalendarClient(accessToken);

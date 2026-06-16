@@ -29,6 +29,17 @@ interface BookingResult {
   };
 }
 
+// Format host first names into a natural subject phrase with correct verb agreement:
+// ["Fede"] -> "Fede is"; ["Fede","Emily"] -> "Fede & Emily are";
+// ["Fede","Emily","Ethan"] -> "Fede, Emily & Ethan are". Empty -> "We're".
+function formatHostNames(names: string[]): string {
+  if (names.length === 0) return "We're";
+  if (names.length === 1) return `${names[0]} is`;
+  const last = names[names.length - 1];
+  const rest = names.slice(0, -1).join(', ');
+  return `${rest} & ${last} are`;
+}
+
 export default function BookingPage() {
   return (
     <div className="min-h-screen flex items-start justify-center py-12 px-4" style={{ backgroundColor: '#E0DAD1' }}>
@@ -52,10 +63,19 @@ function BookingWidget() {
   const [displayTimezone, setDisplayTimezone] = useState<string>('');
   const [noListing, setNoListing] = useState(false); // "I don't have a listing yet" → collect address instead
   const [heardAbout, setHeardAbout] = useState(''); // "How did you hear about us?" selection
+  const [hosts, setHosts] = useState<{ firstName: string; image: string }[]>([]); // bookable hosts for the header strip
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
+
+  // Fetch the bookable hosts for the "ready to chat" header strip
+  useEffect(() => {
+    fetch('/api/hosts')
+      .then((res) => res.json())
+      .then((data) => setHosts(data.hosts || []))
+      .catch(() => setHosts([]));
+  }, []);
 
   // Fetch available dates from the server
   useEffect(() => {
@@ -222,14 +242,15 @@ function BookingWidget() {
           </p>
         </div>
 
-        {/* Team photos strip */}
-        {step === 'date' && (
+        {/* Team photos strip — reflects who is actually bookable (active + calendar-connected) */}
+        {step === 'date' && hosts.length > 0 && (
           <div className="px-6 py-3 flex items-center gap-3" style={{ backgroundColor: '#1a453d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex -space-x-2">
-              <img src="/federico.jpg" alt="Federico" className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
-              <img src="/emily.png" alt="Emily" className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
+              {hosts.map((h, i) => (
+                <img key={i} src={h.image} alt={h.firstName} className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
+              ))}
             </div>
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>Federico & Emily are ready to chat</span>
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>{formatHostNames(hosts.map((h) => h.firstName))} ready to chat</span>
           </div>
         )}
 

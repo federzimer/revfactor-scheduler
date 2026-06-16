@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useEffect, useState, useMemo } from 'react';
 import { redirect } from 'next/navigation';
 import AdminHeader from './AdminHeader';
+import CalendarConnectionCard from './CalendarConnectionCard';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SHORT_DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -307,6 +308,9 @@ export default function AdminPage() {
       <AdminHeader />
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+        {/* Google Calendar connection — surfaced first so a disconnected host can't miss it */}
+        <CalendarConnectionCard />
+
         {/* Booking Settings */}
         <div className="rounded-xl shadow-sm p-6" style={{ backgroundColor: '#F5F4F2', border: '1px solid #E5E4E0' }}>
           <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#9CA3AF' }}>Settings</h2>
