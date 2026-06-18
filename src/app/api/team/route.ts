@@ -97,6 +97,14 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.active === 'boolean') updateData.active = body.active;
   if (typeof body.bookable === 'boolean') updateData.bookable = body.bookable;
 
+  // Guard the avatar: only a data:image/ or http(s) URL, capped (see /api/profile).
+  if (typeof body.image === 'string' && body.image.trim()) {
+    const img = body.image.trim();
+    if (!/^(data:image\/|https?:\/\/)/.test(img) || img.length > 60_000) {
+      return NextResponse.json({ error: 'Invalid or oversized image' }, { status: 400 });
+    }
+  }
+
   // Profile fields a super admin can edit on anyone's behalf. '' clears to null.
   const clean = (v: unknown) => {
     if (typeof v !== 'string') return undefined;
