@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 interface AvailableUser {
   id: string;
   name: string;
-  image?: string;
+  // No `image` here — avatars come from /api/hosts (keyed by id) to keep this payload small.
   bio?: string;
   hometown?: string;
   basedIn?: string;
@@ -67,7 +67,10 @@ function BookingWidget() {
   const [displayTimezone, setDisplayTimezone] = useState<string>('');
   const [noListing, setNoListing] = useState(false); // "I don't have a listing yet" → collect address instead
   const [heardAbout, setHeardAbout] = useState(''); // "How did you hear about us?" selection
-  const [hosts, setHosts] = useState<{ firstName: string; image: string }[]>([]); // bookable hosts for the header strip
+  const [hosts, setHosts] = useState<{ id: string; firstName: string; image: string }[]>([]); // bookable hosts for the header strip + avatar source
+  // Avatars (possibly data-URL uploads) keyed by host id — resolved from /api/hosts, not the slots payload.
+  const imageById = new Map(hosts.map((h) => [h.id, h.image]));
+  const avatarFor = (id: string) => imageById.get(id) || '/default-avatar.png';
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -346,7 +349,7 @@ function BookingWidget() {
                           <div className="flex items-center gap-2">
                             <div className="flex -space-x-1.5">
                               {slot.availableUsers.map((u) => (
-                                <img key={u.id} src={u.image || '/default-avatar.png'} alt={u.name} className="w-6 h-6 rounded-full border-2 border-white object-cover" />
+                                <img key={u.id} src={avatarFor(u.id)} alt={u.name} className="w-6 h-6 rounded-full border-2 border-white object-cover" />
                               ))}
                             </div>
                             <span className="text-xs" style={{ color: '#9CA3AF' }}>
@@ -371,7 +374,7 @@ function BookingWidget() {
                               onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.backgroundColor = '#f9f8f6'; }}
                               onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.backgroundColor = 'white'; }}
                             >
-                              <img src={user.image || '/default-avatar.png'} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
+                              <img src={avatarFor(user.id)} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
                               <span className="font-medium" style={{ color: '#181915' }}>{user.name}</span>
                             </button>
                           ))}
@@ -400,7 +403,7 @@ function BookingWidget() {
 
               <div className="rounded-lg p-4 mb-5" style={{ backgroundColor: '#EBEAE6', border: '1px solid #E5E4E0' }}>
                 <div className="flex items-center gap-3">
-                  <img src={selectedUser.image || '/default-avatar.png'} alt={selectedUser.name} className="w-10 h-10 rounded-full object-cover" />
+                  <img src={avatarFor(selectedUser.id)} alt={selectedUser.name} className="w-10 h-10 rounded-full object-cover" />
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
                       {formatTimeDisplay(selectedSlot.start)} – {formatTimeDisplay(selectedSlot.end)}
