@@ -15,7 +15,13 @@ export async function GET() {
       email: true,
       role: true,
       active: true,
+      bookable: true,
       timezone: true,
+      image: true,
+      bio: true,
+      hometown: true,
+      basedIn: true,
+      strExperience: true,
       accounts: { select: { id: true }, take: 1 }, // has the person connected Google yet?
     },
   });
@@ -27,7 +33,13 @@ export async function GET() {
       email: m.email,
       role: m.role,
       active: m.active,
+      bookable: m.bookable,
       timezone: m.timezone,
+      image: m.image,
+      bio: m.bio,
+      hometown: m.hometown,
+      basedIn: m.basedIn,
+      strExperience: m.strExperience,
       connected: m.accounts.length > 0,
     })),
   });
@@ -55,7 +67,10 @@ export async function POST(req: NextRequest) {
 
   const member = await prisma.user.create({
     data: { name: name || null, email, role, active: true },
-    select: { id: true, name: true, email: true, role: true, active: true, timezone: true },
+    select: {
+      id: true, name: true, email: true, role: true, active: true, bookable: true, timezone: true,
+      image: true, bio: true, hometown: true, basedIn: true, strExperience: true,
+    },
   });
 
   return NextResponse.json({ member: { ...member, connected: false } });
@@ -73,9 +88,27 @@ export async function PATCH(req: NextRequest) {
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) return NextResponse.json({ error: 'Member not found' }, { status: 404 });
 
-  const updateData: { role?: string; active?: boolean } = {};
+  const updateData: {
+    role?: string; active?: boolean; bookable?: boolean;
+    name?: string | null; image?: string | null; bio?: string | null;
+    hometown?: string | null; basedIn?: string | null; strExperience?: string | null;
+  } = {};
   if (body.role === 'super_admin' || body.role === 'user') updateData.role = body.role;
   if (typeof body.active === 'boolean') updateData.active = body.active;
+  if (typeof body.bookable === 'boolean') updateData.bookable = body.bookable;
+
+  // Profile fields a super admin can edit on anyone's behalf. '' clears to null.
+  const clean = (v: unknown) => {
+    if (typeof v !== 'string') return undefined;
+    const t = v.trim();
+    return t === '' ? null : t;
+  };
+  for (const f of ['name', 'image', 'bio', 'hometown', 'basedIn', 'strExperience'] as const) {
+    if (f in body) {
+      const v = clean(body[f]);
+      if (v !== undefined) updateData[f] = v;
+    }
+  }
 
   // Guard: never leave the team without an active super admin.
   const wouldLoseSuperAdmin =
@@ -96,7 +129,10 @@ export async function PATCH(req: NextRequest) {
   const member = await prisma.user.update({
     where: { id },
     data: updateData,
-    select: { id: true, name: true, email: true, role: true, active: true, timezone: true },
+    select: {
+      id: true, name: true, email: true, role: true, active: true, bookable: true, timezone: true,
+      image: true, bio: true, hometown: true, basedIn: true, strExperience: true,
+    },
   });
 
   return NextResponse.json({ member });

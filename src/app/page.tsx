@@ -33,6 +33,18 @@ interface BookingResult {
   };
 }
 
+// A bookable host (rep) with their full lead-facing profile, from /api/hosts.
+interface Host {
+  id: string;
+  name: string;
+  firstName: string;
+  image: string;
+  bio: string | null;
+  hometown: string | null;
+  basedIn: string | null;
+  strExperience: string | null;
+}
+
 // Format host first names into a natural subject phrase with correct verb agreement:
 // ["Fede"] -> "Fede is"; ["Fede","Emily"] -> "Fede & Emily are";
 // ["Fede","Emily","Ethan"] -> "Fede, Emily & Ethan are". Empty -> "We're".
@@ -58,7 +70,8 @@ function BookingWidget() {
   const [loading, setLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [selectedUser, setSelectedUser] = useState<AvailableUser | null>(null);
-  const [step, setStep] = useState<'date' | 'time' | 'form' | 'confirmed'>('date');
+  const [selectedHostId, setSelectedHostId] = useState<string | null>(null); // chosen rep; null = no preference (any host)
+  const [step, setStep] = useState<'host' | 'date' | 'time' | 'form' | 'confirmed'>('host');
   const [booking, setBooking] = useState<BookingResult['booking'] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,10 +80,11 @@ function BookingWidget() {
   const [displayTimezone, setDisplayTimezone] = useState<string>('');
   const [noListing, setNoListing] = useState(false); // "I don't have a listing yet" → collect address instead
   const [heardAbout, setHeardAbout] = useState(''); // "How did you hear about us?" selection
-  const [hosts, setHosts] = useState<{ id: string; firstName: string; image: string }[]>([]); // bookable hosts for the header strip + avatar source
+  const [hosts, setHosts] = useState<Host[]>([]); // bookable hosts (rep picker + header strip + avatar source)
   // Avatars (possibly data-URL uploads) keyed by host id — resolved from /api/hosts, not the slots payload.
   const imageById = new Map(hosts.map((h) => [h.id, h.image]));
   const avatarFor = (id: string) => imageById.get(id) || '/default-avatar.png';
+  const selectedHost = selectedHostId ? hosts.find((h) => h.id === selectedHostId) || null : null;
   const [viewMonth, setViewMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -84,27 +98,25 @@ function BookingWidget() {
       .catch(() => setHosts([]));
   }, []);
 
-  // Fetch available dates from the server
-  useEffect(() => {
-    const fetchAvailableDates = async () => {
-      setLoadingDates(true);
-      const today = new Date();
-      const from = today.toISOString().split('T')[0];
-      const toDate = new Date(today);
-      toDate.setDate(toDate.getDate() + 90); // look ahead up to 90 days (actual limit enforced per-user)
-      const to = toDate.toISOString().split('T')[0];
+  // Fetch which dates have availability — scoped to the chosen host (or all bookable hosts).
+  const loadDates = async (hostId: string | null) => {
+    setLoadingDates(true);
+    const today = new Date();
+    const from = today.toISOString().split('T')[0];
+    const toDate = new Date(today);
+    toDate.setDate(toDate.getDate() + 90); // look ahead up to 90 days (actual limit enforced per-user)
+    const to = toDate.toISOString().split('T')[0];
+    const hostParam = hostId ? `&userId=${hostId}` : '';
 
-      try {
-        const res = await fetch(`/api/available-dates?from=${from}&to=${to}`);
-        const data = await res.json();
-        setAvailableDates(new Set(data.availableDates || []));
-      } catch {
-        setAvailableDates(new Set());
-      }
-      setLoadingDates(false);
-    };
-    fetchAvailableDates();
-  }, []);
+    try {
+      const res = await fetch(`/api/available-dates?from=${from}&to=${to}${hostParam}`);
+      const data = await res.json();
+      setAvailableDates(new Set(data.availableDates || []));
+    } catch {
+      setAvailableDates(new Set());
+    }
+    setLoadingDates(false);
+  };
 
   // Detect visitor timezone
   const visitorTz = typeof window !== 'undefined'
@@ -114,8 +126,9 @@ function BookingWidget() {
   const fetchSlots = async (date: string) => {
     setLoading(true);
     setError(null);
+    const hostParam = selectedHostId ? `&userId=${selectedHostId}` : '';
     try {
-      const res = await fetch(`/api/slots?date=${date}&tz=${encodeURIComponent(visitorTz)}`);
+      const res = await fetch(`/api/slots?date=${date}&tz=${encodeURIComponent(visitorTz)}${hostParam}`);
       const data = await res.json();
       setSlots(data.slots || []);
       if (data.displayTimezone) setDisplayTimezone(data.displayTimezone);
@@ -124,6 +137,16 @@ function BookingWidget() {
       setSlots([]);
     }
     setLoading(false);
+  };
+
+  // Rep picker → enter the date step scoped to that host (or null = no preference / any host).
+  const handleHostSelect = (hostId: string | null) => {
+    setSelectedHostId(hostId);
+    setSelectedDate(null);
+    setSelectedSlot(null);
+    setSelectedUser(null);
+    setStep('date');
+    loadDates(hostId);
   };
 
   const handleDateSelect = (dateStr: string) => {
@@ -249,16 +272,25 @@ function BookingWidget() {
           </p>
         </div>
 
-        {/* Team photos strip — reflects who is actually bookable (active + calendar-connected) */}
-        {step === 'date' && hosts.length > 0 && (
-          <div className="px-6 py-3 flex items-center gap-3" style={{ backgroundColor: '#1a453d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <div className="flex -space-x-2">
-              {hosts.map((h, i) => (
-                <img key={i} src={h.image} alt={h.firstName} className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
-              ))}
+        {/* Header strip on the date/time steps: the chosen rep, or the whole team when "no preference". */}
+        {(step === 'date' || step === 'time') && (
+          selectedHost ? (
+            <div className="px-6 py-3 flex items-center gap-3" style={{ backgroundColor: '#1a453d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <img src={avatarFor(selectedHost.id)} alt={selectedHost.firstName} className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
+              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                Booking with <span className="text-white font-medium">{selectedHost.name}</span>
+              </span>
             </div>
-            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>{formatHostNames(hosts.map((h) => h.firstName))} ready to chat</span>
-          </div>
+          ) : hosts.length > 0 ? (
+            <div className="px-6 py-3 flex items-center gap-3" style={{ backgroundColor: '#1a453d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="flex -space-x-2">
+                {hosts.map((h, i) => (
+                  <img key={i} src={h.image} alt={h.firstName} className="w-8 h-8 rounded-full border-2 object-cover" style={{ borderColor: '#1a453d' }} />
+                ))}
+              </div>
+              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>{formatHostNames(hosts.map((h) => h.firstName))} ready to chat</span>
+            </div>
+          ) : null
         )}
 
         <div className="p-6">
@@ -268,9 +300,76 @@ function BookingWidget() {
             </div>
           )}
 
+          {/* Step: Choose a rep (profile cards) */}
+          {step === 'host' && (
+            <div>
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-4" style={{ color: '#9CA3AF' }}>Who would you like to meet?</h2>
+              {hosts.length === 0 ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2" style={{ borderColor: '#13352F' }}></div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {/* No preference — fastest path to a booking */}
+                  <button
+                    onClick={() => handleHostSelect(null)}
+                    className="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 transition-all"
+                    style={{ backgroundColor: 'white', border: '1px solid #E5E4E0' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.backgroundColor = '#f9f8f6'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.backgroundColor = 'white'; }}
+                  >
+                    <div className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#eef5f0' }}>
+                      <svg className="w-5 h-5" fill="none" stroke="#13352F" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: '#181915' }}>No preference</p>
+                      <p className="text-xs" style={{ color: '#6B7280' }}>Show me the soonest available time</p>
+                    </div>
+                  </button>
+
+                  {hosts.map((h) => (
+                    <button
+                      key={h.id}
+                      onClick={() => handleHostSelect(h.id)}
+                      className="w-full text-left px-4 py-3 rounded-lg flex items-start gap-3 transition-all"
+                      style={{ backgroundColor: 'white', border: '1px solid #E5E4E0' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#13352F'; e.currentTarget.style.backgroundColor = '#f9f8f6'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E4E0'; e.currentTarget.style.backgroundColor = 'white'; }}
+                    >
+                      <img src={h.image} alt={h.name} className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold" style={{ color: '#181915' }}>{h.name}</p>
+                        {(h.hometown || h.basedIn || h.strExperience) && (
+                          <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-0.5">
+                            {h.hometown && <span className="text-[11px]" style={{ color: '#6B7280' }}><span style={{ color: '#9CA3AF' }}>From</span> {h.hometown}</span>}
+                            {h.basedIn && <span className="text-[11px]" style={{ color: '#6B7280' }}><span style={{ color: '#9CA3AF' }}>Based in</span> {h.basedIn}</span>}
+                            {h.strExperience && <span className="text-[11px]" style={{ color: '#6B7280' }}><span style={{ color: '#9CA3AF' }}>STR</span> {h.strExperience}</span>}
+                          </div>
+                        )}
+                        {h.bio && <p className="text-xs mt-1 leading-relaxed" style={{ color: '#6B7280' }}>{h.bio}</p>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Step: Select Date — Calendar Grid */}
           {step === 'date' && (
             <div>
+              <button
+                onClick={() => { setStep('host'); setSelectedDate(null); }}
+                className="text-xs font-medium mb-3 flex items-center gap-1 transition-opacity"
+                style={{ color: '#13352F' }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.6'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
               <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-4" style={{ color: '#9CA3AF' }}>Select a date</h2>
               {loadingDates ? (
                 <div className="flex justify-center py-8">

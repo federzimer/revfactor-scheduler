@@ -13,6 +13,9 @@ export async function GET(req: NextRequest) {
   // Visitor's timezone (detected by frontend, defaults to ET)
   const visitorTz = req.nextUrl.searchParams.get('tz') || 'America/New_York';
 
+  // Optional: restrict to a single host (person-first booking flow). Omitted = all bookable hosts.
+  const userId = req.nextUrl.searchParams.get('userId') || undefined;
+
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
 
   // Get the day of week for the requested date
@@ -26,6 +29,8 @@ export async function GET(req: NextRequest) {
   const adminUsers = await prisma.user.findMany({
     where: {
       active: true,
+      bookable: true,
+      ...(userId ? { id: userId } : {}),
       accounts: { some: { provider: 'google', scope: { contains: 'calendar' } } },
     },
     include: {

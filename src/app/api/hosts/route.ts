@@ -18,21 +18,31 @@ export async function GET() {
   const users = await prisma.user.findMany({
     where: {
       active: true,
+      bookable: true,
       accounts: { some: { provider: 'google', scope: { contains: 'calendar' } } },
     },
     orderBy: [{ role: 'asc' }, { name: 'asc' }],
-    select: { id: true, name: true, email: true, image: true },
+    select: {
+      id: true, name: true, email: true, image: true,
+      bio: true, hometown: true, basedIn: true, strExperience: true,
+    },
   });
 
   const hosts = users.map((u) => {
     const email = u.email?.toLowerCase() || '';
-    const firstName = (u.name || u.email || 'Team Member').trim().split(/\s+/)[0];
+    const name = (u.name || u.email || 'Team Member').trim();
+    const firstName = name.split(/\s+/)[0];
     return {
       id: u.id,
+      name,
       firstName,
       // May be a data-URL avatar (uploaded on /admin/profile). Served here once per page
       // load — deliberately NOT inlined per-slot in /api/slots, which would bloat that response.
       image: u.image || PHOTO_FALLBACK[email] || '/default-avatar.png',
+      bio: u.bio || null,
+      hometown: u.hometown || null,
+      basedIn: u.basedIn || null,
+      strExperience: u.strExperience || null,
     };
   });
 
