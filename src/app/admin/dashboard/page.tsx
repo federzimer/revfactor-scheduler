@@ -264,7 +264,6 @@ export default function DashboardPage() {
                   {filtered.map((b) => {
                     const m = outcomeMeta(b.outcome);
                     const isOpen = expandedId === b.id;
-                    const hasNote = !!(b.outcomeNote || b.visitorNotes);
                     const detailCols = 6 + (isSuperAdmin ? 1 : 0);
                     return (
                       <Fragment key={b.id}>
@@ -292,10 +291,7 @@ export default function DashboardPage() {
                         </td>
                         <td className="py-2.5 px-2 whitespace-nowrap" style={{ color: '#4B5563' }}>{b.hostName}</td>
                         <td className="py-2.5 px-2">
-                          <div className="flex items-center gap-1.5" style={{ color: '#181915' }}>
-                            {b.visitorName}
-                            {hasNote && <span title="Has notes" style={{ color: '#13352F' }}>📝</span>}
-                          </div>
+                          <div style={{ color: '#181915' }}>{b.visitorName}</div>
                           <a href={`mailto:${b.visitorEmail}`} className="text-xs underline" style={{ color: '#13352F' }}>{b.visitorEmail}</a>
                         </td>
                         <td className="py-2.5 px-2 max-w-[200px]">
