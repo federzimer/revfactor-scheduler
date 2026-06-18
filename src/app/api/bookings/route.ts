@@ -50,11 +50,12 @@ export async function GET(req: NextRequest) {
       visitorPhone: b.visitorPhone,
       visitorAirbnbLink: b.visitorAirbnbLink,
       visitorAddress: (b as any).visitorAddress ?? null,
+      visitorNotes: (b as any).visitorNotes ?? null, // the lead's own note from the booking form
       heardAbout: (b as any).visitorHeardAbout ?? null,
       referralName: (b as any).visitorReferralName ?? null,
       status: b.status,
       outcome: (b as any).outcome ?? 'scheduled',
-      outcomeNote: (b as any).outcomeNote ?? null,
+      outcomeNote: (b as any).outcomeNote ?? null, // the rep's CRM note
       createdAt: b.createdAt,
     })),
   });
