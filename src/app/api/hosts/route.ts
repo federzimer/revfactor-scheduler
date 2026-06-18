@@ -21,14 +21,17 @@ export async function GET() {
       accounts: { some: { provider: 'google', scope: { contains: 'calendar' } } },
     },
     orderBy: [{ role: 'asc' }, { name: 'asc' }],
-    select: { name: true, email: true, image: true },
+    select: { id: true, name: true, email: true, image: true },
   });
 
   const hosts = users.map((u) => {
     const email = u.email?.toLowerCase() || '';
     const firstName = (u.name || u.email || 'Team Member').trim().split(/\s+/)[0];
     return {
+      id: u.id,
       firstName,
+      // May be a data-URL avatar (uploaded on /admin/profile). Served here once per page
+      // load — deliberately NOT inlined per-slot in /api/slots, which would bloat that response.
       image: u.image || PHOTO_FALLBACK[email] || '/default-avatar.png',
     };
   });

@@ -3,11 +3,6 @@ import { prisma } from '@/lib/prisma';
 import { getBusyTimes } from '@/lib/google-calendar';
 import { generateTimeSlots, isSlotBusy } from '@/lib/utils';
 
-const PHOTO_FALLBACK: Record<string, string> = {
-  'federico@blackbirdhm.com': '/federico.jpg',
-  'emily@blackbirdhm.com': '/emily.png',
-};
-
 // GET /api/slots?date=2025-03-15&tz=America/Los_Angeles
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date');
@@ -46,10 +41,12 @@ export async function GET(req: NextRequest) {
 
   // For each user, generate their available slots and convert to visitor's timezone
   // Key = display time in visitor TZ, value = list of available users with their host-tz times
+  // NOTE: no `image` here on purpose. Avatars can be ~20KB data URLs and would repeat
+  // for every slot a host appears in, bloating this response. The booking page resolves
+  // avatars from /api/hosts (fetched once) keyed by user id.
   const slotMap: Record<string, {
     id: string;
     name: string;
-    image?: string;
     bio?: string;
     hometown?: string;
     basedIn?: string;
@@ -108,8 +105,6 @@ export async function GET(req: NextRequest) {
       console.error(`Error getting busy times for ${user.email}:`, e);
     }
 
-    const userImage = user.image || PHOTO_FALLBACK[user.email?.toLowerCase() || ''] || undefined;
-
     // Buffer cutoff
     const now = new Date();
     const bufferCutoff = new Date(now.getTime() + minBufferHours * 60 * 60 * 1000);
@@ -140,7 +135,6 @@ export async function GET(req: NextRequest) {
       slotMap[key].push({
         id: user.id,
         name: user.name || user.email || 'Team Member',
-        image: userImage,
         bio: (user as any).bio || undefined,
         hometown: (user as any).hometown || undefined,
         basedIn: (user as any).basedIn || undefined,
