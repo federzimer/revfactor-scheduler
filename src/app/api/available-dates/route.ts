@@ -16,12 +16,17 @@ export async function GET(req: NextRequest) {
 
   const duration = parseInt(process.env.NEXT_PUBLIC_BOOKING_DURATION || '15', 10);
 
-  // Get all active team members with their weekly availability and date overrides.
+  // Optional: restrict to a single host (person-first booking flow). Omitted = all bookable hosts.
+  const userId = req.nextUrl.searchParams.get('userId') || undefined;
+
+  // Get all active, bookable team members with their weekly availability and date overrides.
   // Mirror /api/slots: only consider hosts who have granted Google Calendar access, so a
   // host we can't actually book never makes a date look available.
   const adminUsers = (await prisma.user.findMany({
     where: {
       active: true,
+      bookable: true,
+      ...(userId ? { id: userId } : {}),
       accounts: { some: { provider: 'google', scope: { contains: 'calendar' } } },
     },
     include: {
