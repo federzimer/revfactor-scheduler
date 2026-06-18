@@ -264,7 +264,6 @@ export default function DashboardPage() {
                   {filtered.map((b) => {
                     const m = outcomeMeta(b.outcome);
                     const isOpen = expandedId === b.id;
-                    const detailCols = 6 + (isSuperAdmin ? 1 : 0);
                     return (
                       <Fragment key={b.id}>
                       <tr style={{ borderBottom: isOpen ? 'none' : '1px solid #EBEAE6' }}>
@@ -333,48 +332,53 @@ export default function DashboardPage() {
                       </tr>
 
                       {isOpen && (
-                        <tr style={{ borderBottom: '1px solid #EBEAE6', backgroundColor: '#FBFAF8' }}>
-                          <td></td>
-                          <td colSpan={detailCols} className="px-2 pb-4 pt-1 align-top">
-                            <div className="grid gap-5 md:grid-cols-2">
-                              {/* Contact + context */}
-                              <div className="space-y-2 text-xs">
-                                <Detail label="Email"><a href={`mailto:${b.visitorEmail}`} className="underline" style={{ color: '#13352F' }}>{b.visitorEmail}</a></Detail>
-                                <Detail label="Phone">{b.visitorPhone ? <a href={`tel:${b.visitorPhone}`} className="underline" style={{ color: '#13352F' }}>{b.visitorPhone}</a> : <span style={{ color: '#9CA3AF' }}>—</span>}</Detail>
-                                <Detail label="Property">
-                                  {b.visitorAirbnbLink
-                                    ? <a href={b.visitorAirbnbLink} target="_blank" rel="noreferrer" className="underline break-all" style={{ color: '#13352F' }}>{b.visitorAirbnbLink}</a>
-                                    : <span style={{ color: b.visitorAddress ? '#181915' : '#9CA3AF' }}>{b.visitorAddress || '—'}</span>}
-                                </Detail>
-                                <Detail label="Source">{b.heardAbout === 'Referral' && b.referralName ? `Referral: ${b.referralName}` : (b.heardAbout || '—')}</Detail>
-                                <Detail label="Lead's note">
-                                  {b.visitorNotes ? <span style={{ color: '#181915' }}>{b.visitorNotes}</span> : <span style={{ color: '#9CA3AF' }}>None left at booking</span>}
-                                </Detail>
-                              </div>
+                        <tr style={{ backgroundColor: '#FBFAF8', borderBottom: '1px solid #EBEAE6' }}>
+                          <td colSpan={isSuperAdmin ? 8 : 7} className="p-0">
+                            {/* 2pt ink ruler ties the panel to its row; flush-left grid, hairline-ruled data, white space carries hierarchy. */}
+                            <div className="px-5 py-6" style={{ borderTop: '2px solid #13352F' }}>
+                              <div className="grid gap-x-14 gap-y-8 md:grid-cols-[1.05fr_0.95fr]">
+                                {/* Lead detail — data hangs from hairline rulers */}
+                                <div>
+                                  <h5 className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-2" style={{ color: '#13352F' }}>Lead detail</h5>
+                                  <dl>
+                                    <Field label="Email"><DetailLink href={`mailto:${b.visitorEmail}`}>{b.visitorEmail}</DetailLink></Field>
+                                    <Field label="Phone">{b.visitorPhone ? <DetailLink href={`tel:${b.visitorPhone}`}>{b.visitorPhone}</DetailLink> : <Muted>—</Muted>}</Field>
+                                    <Field label="Property">
+                                      {b.visitorAirbnbLink
+                                        ? <DetailLink href={b.visitorAirbnbLink} external className="break-all">{b.visitorAirbnbLink}</DetailLink>
+                                        : (b.visitorAddress || <Muted>—</Muted>)}
+                                    </Field>
+                                    <Field label="Source">{b.heardAbout === 'Referral' && b.referralName ? `Referral: ${b.referralName}` : (b.heardAbout || <Muted>—</Muted>)}</Field>
+                                    <Field label="Their note">{b.visitorNotes || <Muted>None left at booking</Muted>}</Field>
+                                  </dl>
+                                </div>
 
-                              {/* Rep CRM note */}
-                              <div>
-                                <label className="block text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: '#9CA3AF' }}>Notes</label>
-                                <textarea
-                                  value={noteDrafts[b.id] ?? ''}
-                                  onChange={(e) => setNoteDrafts((d) => ({ ...d, [b.id]: e.target.value }))}
-                                  rows={4}
-                                  placeholder="Add a note about this lead — follow-ups, what they need, next steps…"
-                                  className="w-full rounded-md px-3 py-2 text-sm outline-none resize-y"
-                                  style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
-                                />
-                                <div className="flex items-center gap-3 mt-2">
-                                  <button
-                                    onClick={() => saveNote(b.id)}
-                                    disabled={savingNote === b.id || (noteDrafts[b.id] ?? '') === (b.outcomeNote || '')}
-                                    className="px-3 py-1.5 rounded-md text-xs font-medium transition-opacity disabled:opacity-40"
-                                    style={{ backgroundColor: '#13352F', color: 'white' }}
-                                  >
-                                    {savingNote === b.id ? 'Saving…' : 'Save note'}
-                                  </button>
-                                  {(noteDrafts[b.id] ?? '') !== (b.outcomeNote || '') && (
-                                    <span className="text-[11px]" style={{ color: '#9CA3AF' }}>Unsaved changes</span>
-                                  )}
+                                {/* Rep notes */}
+                                <div>
+                                  <h5 className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-2" style={{ color: '#13352F' }}>Rep notes</h5>
+                                  <div className="pt-2.5" style={{ borderTop: '1px solid #EAE8E3' }}>
+                                    <textarea
+                                      value={noteDrafts[b.id] ?? ''}
+                                      onChange={(e) => setNoteDrafts((d) => ({ ...d, [b.id]: e.target.value }))}
+                                      rows={5}
+                                      placeholder="Follow-ups, what they need, next steps…"
+                                      className="w-full rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed outline-none resize-y"
+                                      style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                                    />
+                                    <div className="flex items-center gap-3 mt-2.5">
+                                      <button
+                                        onClick={() => saveNote(b.id)}
+                                        disabled={savingNote === b.id || (noteDrafts[b.id] ?? '') === (b.outcomeNote || '')}
+                                        className="px-4 py-1.5 rounded-md text-xs font-medium transition-opacity disabled:opacity-40"
+                                        style={{ backgroundColor: '#13352F', color: 'white' }}
+                                      >
+                                        {savingNote === b.id ? 'Saving…' : 'Save note'}
+                                      </button>
+                                      {(noteDrafts[b.id] ?? '') !== (b.outcomeNote || '') && (
+                                        <span className="text-[11px]" style={{ color: '#9CA3AF' }}>Unsaved changes</span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -394,12 +398,31 @@ export default function DashboardPage() {
   );
 }
 
-// One labeled line in the expanded lead detail panel.
-function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+// One field in the expanded lead detail panel: a micro uppercase label and its value,
+// hanging from a hairline ruler (Vignelli discipline — aligned label column, two type sizes).
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex gap-2">
-      <span className="flex-shrink-0 w-20" style={{ color: '#9CA3AF' }}>{label}</span>
-      <span className="min-w-0" style={{ color: '#4B5563' }}>{children}</span>
+    <div className="grid grid-cols-[84px_1fr] gap-4 py-2.5" style={{ borderTop: '1px solid #EAE8E3' }}>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] pt-0.5" style={{ color: '#9CA3AF' }}>{label}</dt>
+      <dd className="text-[13px] leading-relaxed min-w-0" style={{ color: '#181915' }}>{children}</dd>
     </div>
   );
+}
+
+// Link in ink, underline on hover only (restraint — not every value shouts).
+function DetailLink({ href, external, className = '', children }: { href: string; external?: boolean; className?: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      {...(external ? { target: '_blank', rel: 'noreferrer' } : {})}
+      className={`hover:underline ${className}`}
+      style={{ color: '#13352F' }}
+    >
+      {children}
+    </a>
+  );
+}
+
+function Muted({ children }: { children: React.ReactNode }) {
+  return <span style={{ color: '#9CA3AF' }}>{children}</span>;
 }
