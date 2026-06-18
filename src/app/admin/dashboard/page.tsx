@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { redirect } from 'next/navigation';
 import AdminHeader from '../AdminHeader';
 
@@ -18,10 +18,11 @@ interface Booking {
   visitorPhone: string | null;
   visitorAirbnbLink: string | null;
   visitorAddress: string | null;
+  visitorNotes: string | null; // the lead's own note from the booking form
   heardAbout: string | null;
   referralName: string | null;
   outcome: string;
-  outcomeNote: string | null;
+  outcomeNote: string | null; // the rep's CRM note
 }
 
 const OUTCOMES = [
@@ -80,6 +81,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [repFilter, setRepFilter] = useState<string>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<string>('all');
+  const [expandedId, setExpandedId] = useState<string | null>(null); // lead whose CRM detail is open
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({}); // unsaved rep-note edits, by booking id
+  const [savingNote, setSavingNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') redirect('/admin/login');
@@ -108,6 +112,26 @@ export default function DashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outcome }),
     });
+  };
+
+  const toggleExpand = (b: Booking) => {
+    setExpandedId((cur) => (cur === b.id ? null : b.id));
+    setNoteDrafts((d) => (d[b.id] === undefined ? { ...d, [b.id]: b.outcomeNote || '' } : d));
+  };
+
+  const saveNote = async (id: string) => {
+    const note = noteDrafts[id] ?? '';
+    setSavingNote(id);
+    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, outcomeNote: note || null } : b)));
+    try {
+      await fetch(`/api/bookings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcomeNote: note }),
+      });
+    } finally {
+      setSavingNote(null);
+    }
   };
 
   const deleteLead = async (b: Booking) => {
@@ -229,6 +253,7 @@ export default function DashboardPage() {
               <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E5E4E0' }}>
+                    <th className="py-2 px-2 w-6"></th>
                     {['When', 'Rep', 'Lead', 'Property', 'Source', 'Outcome'].map((h) => (
                       <th key={h} className="text-left py-2 px-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#9CA3AF' }}>{h}</th>
                     ))}
@@ -238,8 +263,22 @@ export default function DashboardPage() {
                 <tbody>
                   {filtered.map((b) => {
                     const m = outcomeMeta(b.outcome);
+                    const isOpen = expandedId === b.id;
+                    const hasNote = !!(b.outcomeNote || b.visitorNotes);
+                    const detailCols = 6 + (isSuperAdmin ? 1 : 0);
                     return (
-                      <tr key={b.id} style={{ borderBottom: '1px solid #EBEAE6' }}>
+                      <Fragment key={b.id}>
+                      <tr style={{ borderBottom: isOpen ? 'none' : '1px solid #EBEAE6' }}>
+                        <td className="py-2.5 px-2 align-top">
+                          <button
+                            onClick={() => toggleExpand(b)}
+                            aria-label={isOpen ? 'Hide details' : 'Show details'}
+                            className="transition-transform"
+                            style={{ color: '#9CA3AF', transform: isOpen ? 'rotate(90deg)' : 'none' }}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                          </button>
+                        </td>
                         <td className="py-2.5 px-2 whitespace-nowrap" style={{ color: '#181915' }}>
                           {(() => {
                             const et = formatEastern(b.date, b.startTime, b.hostTimezone);
@@ -253,8 +292,11 @@ export default function DashboardPage() {
                         </td>
                         <td className="py-2.5 px-2 whitespace-nowrap" style={{ color: '#4B5563' }}>{b.hostName}</td>
                         <td className="py-2.5 px-2">
-                          <div style={{ color: '#181915' }}>{b.visitorName}</div>
-                          <div className="text-xs" style={{ color: '#9CA3AF' }}>{b.visitorPhone || b.visitorEmail}</div>
+                          <div className="flex items-center gap-1.5" style={{ color: '#181915' }}>
+                            {b.visitorName}
+                            {hasNote && <span title="Has notes" style={{ color: '#13352F' }}>📝</span>}
+                          </div>
+                          <a href={`mailto:${b.visitorEmail}`} className="text-xs underline" style={{ color: '#13352F' }}>{b.visitorEmail}</a>
                         </td>
                         <td className="py-2.5 px-2 max-w-[200px]">
                           {b.visitorAirbnbLink ? (
@@ -293,6 +335,57 @@ export default function DashboardPage() {
                           </td>
                         )}
                       </tr>
+
+                      {isOpen && (
+                        <tr style={{ borderBottom: '1px solid #EBEAE6', backgroundColor: '#FBFAF8' }}>
+                          <td></td>
+                          <td colSpan={detailCols} className="px-2 pb-4 pt-1 align-top">
+                            <div className="grid gap-5 md:grid-cols-2">
+                              {/* Contact + context */}
+                              <div className="space-y-2 text-xs">
+                                <Detail label="Email"><a href={`mailto:${b.visitorEmail}`} className="underline" style={{ color: '#13352F' }}>{b.visitorEmail}</a></Detail>
+                                <Detail label="Phone">{b.visitorPhone ? <a href={`tel:${b.visitorPhone}`} className="underline" style={{ color: '#13352F' }}>{b.visitorPhone}</a> : <span style={{ color: '#9CA3AF' }}>—</span>}</Detail>
+                                <Detail label="Property">
+                                  {b.visitorAirbnbLink
+                                    ? <a href={b.visitorAirbnbLink} target="_blank" rel="noreferrer" className="underline break-all" style={{ color: '#13352F' }}>{b.visitorAirbnbLink}</a>
+                                    : <span style={{ color: b.visitorAddress ? '#181915' : '#9CA3AF' }}>{b.visitorAddress || '—'}</span>}
+                                </Detail>
+                                <Detail label="Source">{b.heardAbout === 'Referral' && b.referralName ? `Referral: ${b.referralName}` : (b.heardAbout || '—')}</Detail>
+                                <Detail label="Lead's note">
+                                  {b.visitorNotes ? <span style={{ color: '#181915' }}>{b.visitorNotes}</span> : <span style={{ color: '#9CA3AF' }}>None left at booking</span>}
+                                </Detail>
+                              </div>
+
+                              {/* Rep CRM note */}
+                              <div>
+                                <label className="block text-[10px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: '#9CA3AF' }}>Notes</label>
+                                <textarea
+                                  value={noteDrafts[b.id] ?? ''}
+                                  onChange={(e) => setNoteDrafts((d) => ({ ...d, [b.id]: e.target.value }))}
+                                  rows={4}
+                                  placeholder="Add a note about this lead — follow-ups, what they need, next steps…"
+                                  className="w-full rounded-md px-3 py-2 text-sm outline-none resize-y"
+                                  style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                                />
+                                <div className="flex items-center gap-3 mt-2">
+                                  <button
+                                    onClick={() => saveNote(b.id)}
+                                    disabled={savingNote === b.id || (noteDrafts[b.id] ?? '') === (b.outcomeNote || '')}
+                                    className="px-3 py-1.5 rounded-md text-xs font-medium transition-opacity disabled:opacity-40"
+                                    style={{ backgroundColor: '#13352F', color: 'white' }}
+                                  >
+                                    {savingNote === b.id ? 'Saving…' : 'Save note'}
+                                  </button>
+                                  {(noteDrafts[b.id] ?? '') !== (b.outcomeNote || '') && (
+                                    <span className="text-[11px]" style={{ color: '#9CA3AF' }}>Unsaved changes</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -301,6 +394,16 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+// One labeled line in the expanded lead detail panel.
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <span className="flex-shrink-0 w-20" style={{ color: '#9CA3AF' }}>{label}</span>
+      <span className="min-w-0" style={{ color: '#4B5563' }}>{children}</span>
     </div>
   );
 }
