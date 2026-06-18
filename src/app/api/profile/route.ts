@@ -26,6 +26,16 @@ export async function PATCH(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
+
+  // Guard the avatar: only a data:image/ or http(s) URL, capped so a huge data URL can't
+  // bloat the DB or the public /api/hosts response (the cropper emits a ~256² JPEG ≈ 20-30KB).
+  if (typeof body.image === 'string' && body.image.trim()) {
+    const img = body.image.trim();
+    if (!/^(data:image\/|https?:\/\/)/.test(img) || img.length > 60_000) {
+      return NextResponse.json({ error: 'Invalid or oversized image' }, { status: 400 });
+    }
+  }
+
   const clean = (v: unknown) => {
     if (typeof v !== 'string') return undefined;
     const trimmed = v.trim();

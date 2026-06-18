@@ -81,6 +81,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [repFilter, setRepFilter] = useState<string>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<string>('all');
+  const [rangeDays, setRangeDays] = useState<number | null>(90); // default to last 90 days; null = all time
   const [expandedId, setExpandedId] = useState<string | null>(null); // lead whose CRM detail is open
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({}); // unsaved rep-note edits, by booking id
   const [savingNote, setSavingNote] = useState<string | null>(null);
@@ -91,12 +92,17 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status === 'authenticated') loadBookings();
-  }, [status]);
+  }, [status, rangeDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadBookings = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/bookings');
+      let url = '/api/bookings';
+      if (rangeDays) {
+        const from = new Date(Date.now() - rangeDays * 86_400_000).toISOString().split('T')[0];
+        url += `?from=${from}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       setBookings(data.bookings || []);
     } catch {
@@ -121,14 +127,21 @@ export default function DashboardPage() {
 
   const saveNote = async (id: string) => {
     const note = noteDrafts[id] ?? '';
+    const prevNote = bookings.find((b) => b.id === id)?.outcomeNote ?? null;
     setSavingNote(id);
     setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, outcomeNote: note || null } : b)));
     try {
-      await fetch(`/api/bookings/${id}`, {
+      const res = await fetch(`/api/bookings/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ outcomeNote: note }),
       });
+      if (!res.ok) throw new Error();
+    } catch {
+      // Roll back the optimistic update so the UI doesn't show an unsaved note as saved.
+      setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, outcomeNote: prevNote } : b)));
+      setNoteDrafts((d) => ({ ...d, [id]: prevNote || '' }));
+      alert('Could not save the note. Please try again.');
     } finally {
       setSavingNote(null);
     }
@@ -223,6 +236,18 @@ export default function DashboardPage() {
               All <span style={{ fontStyle: 'italic', color: '#13352F' }}>Calls</span>
             </h3>
             <div className="flex items-center gap-2">
+              <select
+                value={rangeDays === null ? 'all' : String(rangeDays)}
+                onChange={(e) => setRangeDays(e.target.value === 'all' ? null : Number(e.target.value))}
+                className="text-xs rounded-md px-3 py-1.5"
+                style={{ backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' }}
+                title="Date range (also scopes the conversion stats above)"
+              >
+                <option value="90">Last 90 days</option>
+                <option value="180">Last 6 months</option>
+                <option value="365">Last 12 months</option>
+                <option value="all">All time</option>
+              </select>
               {isSuperAdmin && (
                 <select
                   value={repFilter}

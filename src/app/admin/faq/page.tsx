@@ -180,6 +180,7 @@ function FaqForm({ initial, onCancel, onSaved }: { initial?: Faq; onCancel: () =
   const [question, setQuestion] = useState(initial?.question ?? '');
   const [answer, setAnswer] = useState(initial?.answer ?? '');
   const [category, setCategory] = useState(initial?.category ?? '');
+  const [sortOrder, setSortOrder] = useState(initial?.sortOrder ?? 0);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -191,7 +192,7 @@ function FaqForm({ initial, onCancel, onSaved }: { initial?: Faq; onCancel: () =
       const res = await fetch('/api/faq', {
         method: initial ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: initial?.id, question, answer, category }),
+        body: JSON.stringify({ id: initial?.id, question, answer, category, sortOrder }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
@@ -213,9 +214,15 @@ function FaqForm({ initial, onCancel, onSaved }: { initial?: Faq; onCancel: () =
         <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Answer</label>
         <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={4} className="w-full rounded-md px-3 py-2 text-sm outline-none resize-y" style={inputStyle} placeholder="The answer / talking point for reps." />
       </div>
-      <div>
-        <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Category</label>
-        <input value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-md px-3 py-2 text-sm outline-none" style={inputStyle} placeholder="e.g. Pricing, Objections, Onboarding" />
+      <div className="grid grid-cols-[1fr_88px] gap-3">
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Category</label>
+          <input value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-md px-3 py-2 text-sm outline-none" style={inputStyle} placeholder="e.g. Pricing, Objections, Onboarding" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: '#4B5563' }}>Order</label>
+          <input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value) || 0)} className="w-full rounded-md px-3 py-2 text-sm outline-none" style={inputStyle} title="Lower numbers show first within a category" />
+        </div>
       </div>
       <div className="flex justify-end gap-2 pt-1">
         <button type="button" onClick={onCancel} disabled={saving} className="px-4 py-2 rounded-md text-sm" style={{ color: '#6B7280', border: '1px solid #E5E4E0', backgroundColor: 'white' }}>Cancel</button>
