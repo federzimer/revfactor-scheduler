@@ -7,6 +7,7 @@ import Link from 'next/link';
 const NAV = [
   { href: '/admin', label: 'My Availability', superAdminOnly: false },
   { href: '/admin/dashboard', label: 'Dashboard', superAdminOnly: false },
+  { href: '/admin/faq', label: 'FAQ', superAdminOnly: false },
   { href: '/admin/profile', label: 'My Profile', superAdminOnly: false },
   { href: '/admin/team', label: 'Team', superAdminOnly: true },
 ];

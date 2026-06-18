@@ -110,3 +110,14 @@ model Booking {
   createdAt       DateTime @default(now())
   user            User     @relation(fields: [userId], references: [id])
 }
+
+// Sales FAQ / playbook entries shown to reps in the admin area. Super admins manage them.
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String?  // optional grouping, e.g. "Pricing", "Objections", "Onboarding"
+  sortOrder Int      @default(0) // manual ordering within a category
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
