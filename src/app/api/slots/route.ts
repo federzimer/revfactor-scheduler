@@ -50,6 +50,10 @@ export async function GET(req: NextRequest) {
     id: string;
     name: string;
     image?: string;
+    bio?: string;
+    hometown?: string;
+    basedIn?: string;
+    strExperience?: string;
     hostStart: string;
     hostEnd: string;
     hostTimezone: string;
@@ -137,6 +141,10 @@ export async function GET(req: NextRequest) {
         id: user.id,
         name: user.name || user.email || 'Team Member',
         image: userImage,
+        bio: (user as any).bio || undefined,
+        hometown: (user as any).hometown || undefined,
+        basedIn: (user as any).basedIn || undefined,
+        strExperience: (user as any).strExperience || undefined,
         hostStart: slot.start,
         hostEnd: slot.end,
         hostTimezone: userTimezone,

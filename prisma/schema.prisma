@@ -45,6 +45,10 @@ model User {
   minBufferHours   Int            @default(2) // minimum hours before a slot can be booked
   role             String         @default("user") // "super_admin" | "user"
   active           Boolean        @default(true) // soft enable/disable a teammate
+  bio              String?        // short blurb shown to visitors on the booking page
+  hometown         String?        // "where are they from" — shown on booking page
+  basedIn          String?        // "where do they live now" — shown on booking page
+  strExperience    String?        // short-term-rental experience blurb (e.g. "5 yrs, 40 listings")
   accounts         Account[]
   sessions         Session[]
   availability     Availability[]
