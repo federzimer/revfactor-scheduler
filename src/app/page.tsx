@@ -6,6 +6,10 @@ interface AvailableUser {
   id: string;
   name: string;
   image?: string;
+  bio?: string;
+  hometown?: string;
+  basedIn?: string;
+  strExperience?: string;
   hostStart: string;
   hostEnd: string;
   hostTimezone: string;
@@ -386,6 +390,31 @@ function BookingWidget() {
                     </p>
                   </div>
                 </div>
+
+                {(selectedUser.bio || selectedUser.hometown || selectedUser.basedIn || selectedUser.strExperience) && (
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #E5E4E0' }}>
+                    {selectedUser.bio && (
+                      <p className="text-xs leading-relaxed mb-2" style={{ color: '#4B5563' }}>{selectedUser.bio}</p>
+                    )}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {selectedUser.hometown && (
+                        <span className="text-[11px]" style={{ color: '#6B7280' }}>
+                          <span style={{ color: '#9CA3AF' }}>From</span> {selectedUser.hometown}
+                        </span>
+                      )}
+                      {selectedUser.basedIn && (
+                        <span className="text-[11px]" style={{ color: '#6B7280' }}>
+                          <span style={{ color: '#9CA3AF' }}>Based in</span> {selectedUser.basedIn}
+                        </span>
+                      )}
+                      {selectedUser.strExperience && (
+                        <span className="text-[11px]" style={{ color: '#6B7280' }}>
+                          <span style={{ color: '#9CA3AF' }}>STR</span> {selectedUser.strExperience}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <h3 className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#9CA3AF' }}>Your details</h3>
