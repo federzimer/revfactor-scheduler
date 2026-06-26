@@ -712,6 +712,24 @@ function BookingWidget() {
                 </a>
               )}
               <p className="text-xs mt-4" style={{ color: '#C4BFB6' }}>A calendar invitation has been sent to your email.</p>
+
+              {/* Explainer video — keep the just-booked owner warm before the call */}
+              <div className="mt-6 pt-5" style={{ borderTop: '1px solid #E5E4E0' }}>
+                <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#9CA3AF' }}>
+                  While you wait — how RevFactor works
+                </p>
+                <div className="aspect-video w-full overflow-hidden rounded-lg" style={{ border: '1px solid #E5E4E0', backgroundColor: '#000' }}>
+                  <iframe
+                    src="https://www.youtube-nocookie.com/embed/NOHgs6Tcjno?rel=0&modestbranding=1"
+                    title="How RevFactor works"
+                    className="w-full h-full"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
