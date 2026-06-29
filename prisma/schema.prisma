@@ -121,3 +121,15 @@ model Faq {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// Shareable files/links (contract, service agreement, decks) shown in the FAQ Resources panel.
+// Link-based: each row points at an external URL (Google Drive, Dropbox, etc.). Super admins manage them.
+model Resource {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  // optional one-line note about the file
+  url         String   // external link to the document
+  sortOrder   Int      @default(0) // manual ordering in the panel
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
