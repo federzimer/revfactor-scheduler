@@ -2,6 +2,8 @@
 
 A round-robin scheduling app for RevFactor sales calls. Team members set their weekly availability, visitors book 15-minute calls, and the system creates Google Calendar events with Google Meet links automatically.
 
+> 📋 **Picking this up / new machine?** Read [`docs/HANDOFF.md`](docs/HANDOFF.md) — setup, infra map, gotchas (esp. never `prisma db push` on prod), current state, and backlog.
+
 ## Features
 
 - **Round-robin booking** — Multiple team members can be available at the same time. Visitors choose who to meet with, or get auto-assigned if only one person is free.
