@@ -199,13 +199,12 @@ export async function deleteCalendarEvent(userId: string, eventId: string): Prom
 /**
  * Create a Google Calendar event with Google Meet.
  *
- * Privacy: the event is created on the host's (rep's) primary calendar, so the rep
- * sees it normally. The LEAD is intentionally NOT added as an attendee — this keeps the
- * rep's email address private (Google would otherwise expose the organizer's address to
- * attendees and invite reply-all email threads). The lead receives the Meet link via the
- * booking confirmation screen and the n8n confirmation/reminder emails instead, so all
- * post-booking communication stays in the portal. `attendeeEmail` is accepted for context
- * but is not added to the invite.
+ * The event is created on the host's (rep's) primary calendar and the LEAD is added as
+ * an attendee with `sendUpdates: 'all'`, so Google emails them a real invite and the
+ * meeting lands on their own calendar. (An earlier version deliberately left the lead
+ * off to keep the rep's email private, but that meant leads never got an invite and
+ * routinely missed calls — reversed 2026-07-16.) The n8n confirmation/reminder emails
+ * still fire in addition to the Google invite.
  */
 export async function createCalendarEvent(
   userId: string,
@@ -228,7 +227,7 @@ export async function createCalendarEvent(
     const response = await calendar.events.insert({
       calendarId: 'primary',
       conferenceDataVersion: 1,
-      sendUpdates: 'none', // do NOT email the lead — they aren't an attendee and the rep's email must stay private
+      sendUpdates: 'all', // Google emails the lead the invite so the call is on their calendar
       requestBody: {
         summary: params.summary,
         description: params.description,
@@ -240,8 +239,7 @@ export async function createCalendarEvent(
           dateTime: params.endTime,
           timeZone: params.timezone,
         },
-        // No lead attendee — see the privacy note above. The event lives on the host's
-        // own calendar, so the rep still sees it without being listed as a guest.
+        attendees: [{ email: params.attendeeEmail }],
         conferenceData: {
           createRequest: {
             requestId: `revfactor-${Date.now()}`,
