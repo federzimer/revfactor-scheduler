@@ -21,6 +21,14 @@ interface Resource {
   sortOrder: number;
 }
 
+type PlaybookTab = 'faq' | 'resources' | 'onboarding';
+
+const PLAYBOOK_TABS: { id: PlaybookTab; label: string }[] = [
+  { id: 'faq', label: 'FAQ' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'onboarding', label: 'Onboarding video' },
+];
+
 const inputStyle = { backgroundColor: 'white', border: '1px solid #E5E4E0', color: '#181915' } as const;
 
 export default function FaqPage() {
@@ -33,6 +41,7 @@ export default function FaqPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Faq | null>(null); // existing FAQ being edited
   const [adding, setAdding] = useState(false); // add form open
+  const [activeTab, setActiveTab] = useState<PlaybookTab>('faq');
 
   useEffect(() => {
     if (status === 'unauthenticated') redirect('/admin/login');
@@ -100,18 +109,15 @@ export default function FaqPage() {
       <AdminHeader />
 
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8 lg:items-start">
-          {/* FAQ column */}
-          <div className="space-y-6 min-w-0">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: '#9CA3AF' }}>Sales playbook</h2>
-                <h3 className="text-2xl font-semibold" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
-                  Rep <span style={{ fontStyle: 'italic', color: '#13352F' }}>FAQ</span>
-                </h3>
-                <p className="text-sm mt-1" style={{ color: '#6B7280' }}>Quick answers and talking points for sales calls.</p>
-              </div>
-              {canEdit && !adding && (
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: '#9CA3AF' }}>Sales enablement</h2>
+            <h3 className="text-2xl font-semibold" style={{ color: '#181915', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              Sales <span style={{ fontStyle: 'italic', color: '#13352F' }}>playbook</span>
+            </h3>
+            <p className="text-sm mt-1" style={{ color: '#6B7280' }}>Answers, shareable resources, and the client onboarding walkthrough.</p>
+          </div>
+          {activeTab === 'faq' && canEdit && !adding && (
                 <button
                   onClick={() => { setAdding(true); setEditing(null); }}
                   className="text-white px-4 py-2 rounded-md text-sm font-medium flex-shrink-0"
@@ -119,8 +125,34 @@ export default function FaqPage() {
                 >
                   + Add FAQ
                 </button>
-              )}
-            </div>
+          )}
+        </div>
+
+        <div className="flex gap-1 mb-7 overflow-x-auto" role="tablist" aria-label="Sales playbook sections" style={{ borderBottom: '1px solid #CFCAC1' }}>
+          {PLAYBOOK_TABS.map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveTab(tab.id)}
+                className="px-4 py-2.5 text-sm font-medium whitespace-nowrap"
+                style={{
+                  color: active ? '#13352F' : '#6B7280',
+                  borderBottom: active ? '2px solid #A33A3A' : '2px solid transparent',
+                  marginBottom: '-1px',
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === 'faq' && (
+          <div className="space-y-6 min-w-0 max-w-3xl">
 
             {error && (
               <div className="rounded-lg px-4 py-3 text-sm" style={{ backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5' }}>{error}</div>
@@ -186,16 +218,37 @@ export default function FaqPage() {
               ))
             )}
           </div>
+        )}
 
-          {/* Resources side panel */}
-          <aside className="mt-8 lg:mt-0 lg:sticky lg:top-8">
+        {activeTab === 'resources' && (
+          <div className="max-w-3xl">
             <ResourcesPanel
               resources={resources}
               setResources={setResources}
               canEdit={canEdit}
             />
-          </aside>
-        </div>
+          </div>
+        )}
+
+        {activeTab === 'onboarding' && (
+          <section className="max-w-4xl" aria-labelledby="onboarding-video-title">
+            <div className="mb-4">
+              <h4 id="onboarding-video-title" className="text-lg font-semibold" style={{ color: '#181915' }}>Client onboarding walkthrough</h4>
+              <p className="text-sm mt-1" style={{ color: '#6B7280' }}>Use this walkthrough to explain the agreement, payment, portal invitation, and onboarding flow.</p>
+            </div>
+            <div className="overflow-hidden rounded-lg shadow-sm" style={{ backgroundColor: '#0B2A25', border: '1px solid #CFCAC1' }}>
+              <video
+                controls
+                preload="metadata"
+                className="block w-full h-auto"
+                aria-label="RevFactor client signup and onboarding walkthrough"
+              >
+                <source src="/videos/revfactor-onboarding-walkthrough.mp4" type="video/mp4" />
+                Your browser does not support embedded video.
+              </video>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

@@ -109,6 +109,26 @@ model Booking {
   outcomeNote     String?  // optional rep note about the outcome
   createdAt       DateTime @default(now())
   user            User     @relation(fields: [userId], references: [id])
+  followUps       BookingFollowUp[]
+}
+
+model BookingFollowUp {
+  id                String    @id @default(cuid())
+  bookingId         String
+  templateKey       String
+  subject           String
+  body              String
+  status            String    @default("sending") // sending, sent, failed
+  providerMessageId String?
+  error             String?
+  sentByUserId      String?
+  sentByName        String?
+  sentByEmail       String?
+  createdAt         DateTime  @default(now())
+  sentAt            DateTime?
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
 }
 
 // Sales FAQ / playbook entries shown to reps in the admin area. Super admins manage them.
