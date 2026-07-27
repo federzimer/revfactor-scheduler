@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createCalendarEvent } from '@/lib/google-calendar';
 
+const WEBHOOK_TIMEOUT_MS = 5_000;
+
+async function deliverWebhook(
+  label: string,
+  url: string,
+  init: RequestInit,
+): Promise<void> {
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      console.error(`[${label}] forward failed with status ${response.status}`);
+    }
+  } catch (error) {
+    console.error(`[${label}] forward failed:`, error);
+  }
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { date, startTime, endTime, userId, visitorName, visitorEmail, visitorPhone, visitorAirbnbLink, visitorAddress, visitorHeardAbout, visitorReferralName, visitorNotes } = body;
@@ -109,11 +130,15 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Forward booking to the hub as a lead (fire-and-forget).
+  // Keep the function alive until downstream systems accept the booking. Vercel can
+  // terminate unawaited requests as soon as the response is returned.
+  const webhookDeliveries: Promise<void>[] = [];
+
+  // Forward booking to the hub as a lead.
   const hubUrl = process.env.HUB_WEBHOOK_URL;
   const hubSecret = process.env.HUB_WEBHOOK_SECRET;
   if (hubUrl && hubSecret) {
-    fetch(hubUrl, {
+    webhookDeliveries.push(deliverWebhook('hub webhook', hubUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -137,17 +162,15 @@ export async function POST(req: NextRequest) {
         hostEmail: user.email,
         meetLink: calendarEvent?.meetLink || null,
       }),
-    }).catch((e) => {
-      console.error('[hub webhook] forward failed:', e);
-    });
+    }));
   }
 
-  // Send booking data to n8n (fire-and-forget) so it can send the confirmation email and
+  // Send booking data to n8n so it can send the confirmation email and
   // schedule reminder emails (e.g. 24h + 1h before) to reduce no-shows. n8n owns the
   // scheduling and delivery; the app just hands over everything it needs. No-op if unset.
   const n8nUrl = process.env.N8N_BOOKING_WEBHOOK_URL;
   if (n8nUrl) {
-    fetch(n8nUrl, {
+    webhookDeliveries.push(deliverWebhook('n8n webhook', n8nUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -167,10 +190,10 @@ export async function POST(req: NextRequest) {
         heardAbout: visitorHeardAbout || null,
         companyName,
       }),
-    }).catch((e) => {
-      console.error('[n8n webhook] forward failed:', e);
-    });
+    }));
   }
+
+  await Promise.all(webhookDeliveries);
 
   return NextResponse.json({
     booking: {
