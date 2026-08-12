@@ -36,7 +36,8 @@ Notes:
 | Code | GitHub `federzimer/revfactor-scheduler` |
 | Hosting | Vercel — project `revfactor-scheduler`, team `federico-zimermans-projects`, domain `schedule.revfactor.io` |
 | Database | Supabase project **"RevFactor Scheduler"**, ref `rhtswmtjvuclrxycuffg` (⚠️ NOT blackbird-hq / RevFactorCFO) |
-| Emails | n8n `n8n.blackbirdhm.com`, workflow **"RevFactor Booking Reminders"** (`BV8oWYx3lxbTpX6x`) → confirmation + 24h + 1h reminders via Gmail SMTP, From `notifications@revfactor.io` |
+| Booking emails | n8n `n8n.blackbirdhm.com`, workflow **"RevFactor Booking Reminders"** (`BV8oWYx3lxbTpX6x`) → confirmation + 24h + 1h reminders via Gmail SMTP, From `notifications@revfactor.io` |
+| CRM follow-ups | Resend → editable post-call emails from `no-reply@revfactor.io`; replies route to the signed-in sales agent |
 
 ## ⚠️ Gotchas (read before touching the DB or deploying)
 
@@ -50,13 +51,23 @@ Notes:
 - **Booking flow:** `host → date → time → form → confirmed`. `/api/slots` and `/api/available-dates` accept `?userId=` to scope to one rep; omit it for "any host". The confirmed screen embeds the YouTube explainer.
 - **Roles:** `User.role` = `super_admin | user`; `User.active` gates login (bootstrap allowlist = `ADMIN_EMAILS`). Super-admins: Federico, Gaston. Bookable reps: Emily, Ethan.
 - **Emails:** `/api/book` fire-and-forwards each confirmed booking to `N8N_BOOKING_WEBHOOK_URL`; n8n owns delivery + reminder scheduling.
+- **Post-call follow-ups:** mark a call `Completed`, open its lead detail, and choose `Send follow-up email`. The rep can select and edit one of three templates. Delivery is recorded in `BookingFollowUp`.
+
+## Post-call email setup
+
+1. Verify `revfactor.io` in Resend (SPF/DKIM records).
+2. Add `RESEND_API_KEY` to the Vercel project as a sensitive Production + Preview environment variable.
+3. Add `FOLLOW_UP_FROM_EMAIL=RevFactor <no-reply@revfactor.io>` as a Production + Preview environment variable.
+4. Apply [`prisma/migrations_manual/0006_add_booking_follow_up.sql`](../prisma/migrations_manual/0006_add_booking_follow_up.sql) in the **RevFactor Scheduler** Supabase SQL editor before deploying.
+
+The recipient is always read from the booking, not supplied by the browser. Regular reps can only send for their own completed calls; super admins can send for any completed call. The signed-in agent is used as `Reply-To` even though the visible sender is the no-reply address.
 
 ## Current state & backlog
 
 **Live:** person-first booking, rep profiles (upload+crop), `bookable` control, CRM dashboard (lead email + expandable detail + editable notes + date range), rep FAQ (seeded from call transcripts), confirmation video, RLS + input-validation hardening.
 
 **Open / next:**
-1. **Migrate transactional email off Gmail SMTP → Resend or Postmark** (+ SPF/DKIM/DMARC on `revfactor.io`). Gmail SMTP causes delays/throttling/deliverability risk. Highest-value next step.
+1. **Migrate booking confirmations/reminders off Gmail SMTP → Resend or Postmark.** Post-call CRM emails already use Resend; the n8n booking workflow still uses Gmail SMTP.
 2. **Confirmation video in the email** — HTML snippet ready (poster → YouTube link); paste into the n8n confirmation node, or do it during the email migration.
 3. **Granola → auto lead notes** — add a `Booking.callSummary` field; match Granola notes to bookings by rep + call time; feed via Zapier/n8n.
 4. **Dated follow-up reminders** — no `FollowUp` model yet (current notes are free-text, unscheduled).

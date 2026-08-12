@@ -31,7 +31,22 @@ export async function GET(req: NextRequest) {
   const bookings = await prisma.booking.findMany({
     where,
     orderBy: [{ date: 'desc' }, { startTime: 'desc' }],
-    include: { user: { select: { id: true, name: true, email: true, timezone: true } } },
+    include: {
+      user: { select: { id: true, name: true, email: true, timezone: true } },
+      followUps: {
+        where: { status: 'sent' },
+        orderBy: { sentAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          templateKey: true,
+          subject: true,
+          status: true,
+          sentByName: true,
+          sentAt: true,
+        },
+      },
+    },
   });
 
   return NextResponse.json({
@@ -56,6 +71,7 @@ export async function GET(req: NextRequest) {
       status: b.status,
       outcome: (b as any).outcome ?? 'scheduled',
       outcomeNote: (b as any).outcomeNote ?? null, // the rep's CRM note
+      followUps: b.followUps,
       createdAt: b.createdAt,
     })),
   });

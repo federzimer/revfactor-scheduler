@@ -4,6 +4,16 @@ import { useSession } from 'next-auth/react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { redirect } from 'next/navigation';
 import AdminHeader from '../AdminHeader';
+import { FollowUpTemplateKey, getFollowUpTemplates } from '@/lib/follow-up-templates';
+
+interface BookingFollowUp {
+  id: string;
+  templateKey: FollowUpTemplateKey;
+  subject: string;
+  status: string;
+  sentByName: string | null;
+  sentAt: string | null;
+}
 
 interface Booking {
   id: string;
@@ -23,6 +33,7 @@ interface Booking {
   referralName: string | null;
   outcome: string;
   outcomeNote: string | null; // the rep's CRM note
+  followUps: BookingFollowUp[];
 }
 
 const OUTCOMES = [
@@ -85,6 +96,7 @@ export default function DashboardPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null); // lead whose CRM detail is open
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({}); // unsaved rep-note edits, by booking id
   const [savingNote, setSavingNote] = useState<string | null>(null);
+  const [emailBooking, setEmailBooking] = useState<Booking | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') redirect('/admin/login');
@@ -112,12 +124,35 @@ export default function DashboardPage() {
   };
 
   const updateOutcome = async (id: string, outcome: string) => {
+    const previous = bookings.find((b) => b.id === id)?.outcome || 'scheduled';
     setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, outcome } : b)));
-    await fetch(`/api/bookings/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ outcome }),
-    });
+    try {
+      const res = await fetch(`/api/bookings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcome }),
+      });
+      if (!res.ok) throw new Error();
+      if (outcome === 'completed') {
+        const booking = bookings.find((b) => b.id === id);
+        if (booking) {
+          setExpandedId(id);
+          setNoteDrafts((drafts) => (drafts[id] === undefined ? { ...drafts, [id]: booking.outcomeNote || '' } : drafts));
+        }
+      }
+    } catch {
+      setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, outcome: previous } : b)));
+      alert('Could not update the call outcome. Please try again.');
+    }
+  };
+
+  const recordFollowUp = (bookingId: string, followUp: BookingFollowUp) => {
+    setBookings((prev) => prev.map((booking) => (
+      booking.id === bookingId
+        ? { ...booking, followUps: [followUp, ...(booking.followUps || [])].slice(0, 5) }
+        : booking
+    )));
+    setEmailBooking(null);
   };
 
   const toggleExpand = (b: Booking) => {
@@ -360,7 +395,7 @@ export default function DashboardPage() {
                         <tr style={{ backgroundColor: '#FBFAF8', borderBottom: '1px solid #EBEAE6' }}>
                           <td colSpan={isSuperAdmin ? 8 : 7} className="p-0">
                             {/* 2pt ink ruler ties the panel to its row; flush-left grid, hairline-ruled data, white space carries hierarchy. */}
-                            <div className="px-5 py-6" style={{ borderTop: '2px solid #13352F' }}>
+                            <div className="sticky left-0 w-[calc(100vw-5rem)] px-5 py-6 md:static md:w-auto" style={{ borderTop: '2px solid #13352F' }}>
                               <div className="grid gap-x-14 gap-y-8 md:grid-cols-[1.05fr_0.95fr]">
                                 {/* Lead detail — data hangs from hairline rulers */}
                                 <div>
@@ -406,6 +441,33 @@ export default function DashboardPage() {
                                   </div>
                                 </div>
                               </div>
+
+                              {b.outcome === 'completed' && (
+                                <div className="mt-7 pt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderTop: '1px solid #D8D4CC' }}>
+                                  <div>
+                                    <h5 className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: '#13352F' }}>Post-call follow-up</h5>
+                                    {b.followUps?.length ? (
+                                      <p className="text-xs mt-1" style={{ color: '#6B7280' }}>
+                                        Last sent {formatSentAt(b.followUps[0].sentAt)}{b.followUps[0].sentByName ? ` by ${b.followUps[0].sentByName}` : ''}
+                                        {' · '}{b.followUps[0].subject}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs mt-1" style={{ color: '#6B7280' }}>No follow-up email has been sent for this call.</p>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEmailBooking(b)}
+                                    className="px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 flex-shrink-0"
+                                    style={{ backgroundColor: '#A33A3A', color: 'white' }}
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8m-18 8V6a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                    </svg>
+                                    {b.followUps?.length ? 'Send another email' : 'Send follow-up email'}
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -419,6 +481,178 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+
+      {emailBooking && (
+        <FollowUpComposer
+          key={emailBooking.id}
+          booking={emailBooking}
+          agentName={session.user?.name || 'RevFactor'}
+          onClose={() => setEmailBooking(null)}
+          onSent={(followUp) => recordFollowUp(emailBooking.id, followUp)}
+        />
+      )}
+    </div>
+  );
+}
+
+function formatSentAt(value: string | null) {
+  if (!value) return 'recently';
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function FollowUpComposer({
+  booking,
+  agentName,
+  onClose,
+  onSent,
+}: {
+  booking: Booking;
+  agentName: string;
+  onClose: () => void;
+  onSent: (followUp: BookingFollowUp) => void;
+}) {
+  const templates = getFollowUpTemplates({ leadName: booking.visitorName, agentName });
+  const [selectedKey, setSelectedKey] = useState<FollowUpTemplateKey>('subscribe');
+  const initial = templates[0];
+  const [subject, setSubject] = useState(initial.subject);
+  const [message, setMessage] = useState(initial.body);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const chooseTemplate = (key: FollowUpTemplateKey) => {
+    const template = templates.find((item) => item.key === key)!;
+    setSelectedKey(key);
+    setSubject(template.subject);
+    setMessage(template.body);
+    setError(null);
+  };
+
+  const send = async () => {
+    if (!subject.trim() || !message.trim()) {
+      setError('Add a subject and message before sending.');
+      return;
+    }
+    if (message.includes('[Add ')) {
+      setError('Replace the bracketed notes with the answers or questions from the call.');
+      return;
+    }
+
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/bookings/${booking.id}/follow-up`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateKey: selectedKey, subject, message }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'The email could not be sent.');
+      onSent(data.followUp);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The email could not be sent.');
+      setSending(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(11, 42, 37, 0.72)' }}
+      role="presentation"
+      onMouseDown={(event) => { if (event.currentTarget === event.target && !sending) onClose(); }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="follow-up-title"
+        className="w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden rounded-lg shadow-2xl"
+        style={{ backgroundColor: '#F9F8F5', border: '1px solid #D8D4CC' }}
+      >
+        <header className="px-6 py-5 flex-shrink-0 flex items-start justify-between gap-4" style={{ borderBottom: '1px solid #D8D4CC' }}>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] mb-1" style={{ color: '#A33A3A' }}>Post-call email</p>
+            <h3 id="follow-up-title" className="text-2xl font-semibold" style={{ color: '#173A33', fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              Follow up with {booking.visitorName}
+            </h3>
+            <p className="text-sm mt-1" style={{ color: '#6B7280' }}>{booking.visitorEmail}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={sending} aria-label="Close email composer" className="p-2 rounded-md" style={{ color: '#6B7280' }}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </header>
+
+        <div className="p-6 space-y-5 overflow-y-auto">
+          <fieldset>
+            <legend className="text-xs font-semibold mb-2" style={{ color: '#173A33' }}>Choose a starting template</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {templates.map((template) => {
+                const active = selectedKey === template.key;
+                return (
+                  <button
+                    key={template.key}
+                    type="button"
+                    onClick={() => chooseTemplate(template.key)}
+                    className="text-left p-3 rounded-md min-h-[88px]"
+                    style={{
+                      backgroundColor: active ? '#E8EEE9' : 'white',
+                      border: active ? '1px solid #24584D' : '1px solid #D8D4CC',
+                    }}
+                  >
+                    <span className="block text-sm font-semibold" style={{ color: '#173A33' }}>{template.label}</span>
+                    <span className="block text-xs mt-1 leading-relaxed" style={{ color: '#6B7280' }}>{template.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <div>
+            <label htmlFor="follow-up-subject" className="block text-xs font-semibold mb-1.5" style={{ color: '#173A33' }}>Subject</label>
+            <input
+              id="follow-up-subject"
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              maxLength={160}
+              className="w-full rounded-md px-3.5 py-2.5 text-sm outline-none"
+              style={{ backgroundColor: 'white', border: '1px solid #CFCAC1', color: '#181915' }}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="follow-up-message" className="block text-xs font-semibold mb-1.5" style={{ color: '#173A33' }}>Message</label>
+            <textarea
+              id="follow-up-message"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              rows={14}
+              maxLength={10_000}
+              className="w-full rounded-md px-3.5 py-3 text-sm leading-relaxed outline-none resize-y"
+              style={{ backgroundColor: 'white', border: '1px solid #CFCAC1', color: '#181915' }}
+            />
+          </div>
+
+          {error && (
+            <div className="px-3.5 py-2.5 rounded-md text-sm" role="alert" style={{ backgroundColor: '#F8EAEA', border: '1px solid #E7B8B8', color: '#8C2F2F' }}>
+              {error}
+            </div>
+          )}
+        </div>
+
+        <footer className="px-6 py-4 flex-shrink-0 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderTop: '1px solid #D8D4CC', backgroundColor: '#F3F1ED' }}>
+          <p className="text-xs" style={{ color: '#6B7280' }}>From no-reply@revfactor.io · replies go to {agentName}</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} disabled={sending} className="px-4 py-2 rounded-md text-sm" style={{ backgroundColor: 'white', border: '1px solid #CFCAC1', color: '#4B5563' }}>Cancel</button>
+            <button type="button" onClick={send} disabled={sending} className="px-4 py-2 rounded-md text-sm font-semibold min-w-[112px]" style={{ backgroundColor: '#A33A3A', color: 'white', opacity: sending ? 0.65 : 1 }}>
+              {sending ? 'Sending…' : 'Send email'}
+            </button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }
